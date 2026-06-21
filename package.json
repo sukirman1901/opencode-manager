@@ -1,0 +1,17 @@
+{
+  "name": "opencode-manager",
+  "version": "0.1.0",
+  "description": "Web UI for managing OpenCode models, providers, plugins, and usage",
+  "type": "module",
+  "main": "index.ts",
+  "exports": {
+    ".": "./index.ts",
+    "./server": "./index.ts"
+  },
+  "dependencies": {
+    "@opencode-ai/sdk": "^1.3.9"
+  },
+  "peerDependencies": {
+    "@opencode-ai/plugin": ">=1.3.0"
+  }
+}
