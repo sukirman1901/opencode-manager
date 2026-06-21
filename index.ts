@@ -17,6 +17,7 @@ function findPaths() {
     envConfig,
     join(home, ".config/opencode/opencode.json"),
     join(home, ".config/opencode/config.json"),
+    join(home, ".opencode/opencode.json"),
     join(home, ".opencode/config.json"),
     join(home, ".config/opencode/opencode.jsonc"),
   ].filter(Boolean) as string[];
@@ -154,10 +155,8 @@ async function readConfig() {
       }
       if (!currentModel && raw.model) currentModel = raw.model;
       // Merge plugins, agents, etc.
-      if (raw.plugin) merged.plugin = [...new Set([...(merged.plugin || []), ...raw.plugin])];
-      if (raw.agent) merged.agent = { ...(merged.agent || {}), ...raw.agent };
-      if (raw.plugins) merged.plugins = [...new Set([...(merged.plugins || []), ...raw.plugins])];
-      if (raw.agents) merged.agents = { ...(merged.agents || {}), ...raw.agents };
+      if (raw.plugin || raw.plugins) merged.plugins = [...new Set([...(merged.plugins || []), ...(raw.plugin || []), ...(raw.plugins || [])])];
+      if (raw.agent || raw.agents) merged.agents = { ...(merged.agents || {}), ...(raw.agent || {}), ...(raw.agents || {}) };
     } catch {}
   }
 
@@ -235,7 +234,17 @@ async function writeConfig(updater: (cfg: any) => any, targetProvider?: string, 
     }
   }
 
-  if (!targetFile) throw new Error("No config file found");
+  if (!targetFile) {
+    if (_paths.configPaths.length === 0) {
+      targetFile = join(homedir(), ".opencode/opencode.json");
+      if (!existsSync(join(homedir(), ".opencode"))) Bun.spawnSync(["mkdir", "-p", join(homedir(), ".opencode")]);
+      writeFileSync(targetFile, JSON.stringify({ provider: {} }, null, 2));
+      _paths.configPaths.push(targetFile);
+      _paths.primaryConfig = targetFile;
+    } else {
+      throw new Error("No config file found");
+    }
+  }
   const raw = JSON.parse(readFileSync(targetFile, "utf-8"));
   const updated = updater(raw);
   writeFileSync(targetFile, JSON.stringify(updated, null, 2));
@@ -267,10 +276,10 @@ const PAGE = `<!DOCTYPE html>
 <title>OpenCode Manager</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; background: #f5f6f8; color: #24292f; min-height: 100vh; -webkit-font-smoothing: antialiased; }
-  .layout { display: flex; min-height: 100vh; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; background: #f5f6f8; color: #24292f; height: 100vh; overflow: hidden; -webkit-font-smoothing: antialiased; }
+  .layout { display: flex; height: 100vh; }
   .sidebar { width: 220px; background: #fff; border-right: 1px solid #d0d7de; display: flex; flex-direction: column; flex-shrink: 0; }
-  .sidebar-brand { padding: 18px 20px; font-size: 15px; font-weight: 600; color: #1f2328; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid #d0d7de; cursor: pointer; }
+  .sidebar-brand { height: 56px; padding: 0 20px; font-size: 15px; font-weight: 600; color: #1f2328; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid #d0d7de; cursor: pointer; flex-shrink: 0; }
   .sidebar-brand svg { width: 18px; height: 18px; color: #656d76; }
   .sidebar-nav { padding: 8px; flex: 1; }
   .sidebar-item { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 6px; font-size: 13px; font-weight: 500; color: #656d76; cursor: pointer; transition: all .1s; }
@@ -279,15 +288,16 @@ const PAGE = `<!DOCTYPE html>
   .sidebar-item svg { width: 16px; height: 16px; flex-shrink: 0; }
   .sidebar-footer { padding: 12px 16px; border-top: 1px solid #d0d7de; font-size: 11px; color: #8c959f; }
   .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-  .topbar { display: flex; align-items: center; gap: 8px; padding: 18px 20px; border-bottom: 1px solid #d0d7de; background: #fff; }
+  .topbar { height: 56px; display: flex; align-items: center; gap: 8px; padding: 0 20px; border-bottom: 1px solid #d0d7de; background: #fff; flex-shrink: 0; }
   .topbar h1 { font-size: 15px; font-weight: 600; color: #1f2328; }
   .topbar-right { margin-left: auto; display: flex; align-items: center; gap: 6px; }
-  .model-bar { margin: 16px 20px 0; padding: 14px 18px; background: #fff; border: 1px solid #d0d7de; border-radius: 8px; display: flex; align-items: center; justify-content: space-between; }
-  .model-bar-label { font-size: 11px; font-weight: 500; color: #656d76; text-transform: uppercase; letter-spacing: .04em; }
-  .model-bar-id { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; font-size: 14px; color: #0969da; margin-top: 2px; word-break: break-all; }
-  .content { padding: 16px 20px 24px; flex: 1; }
-  .tab-content { display: none; }
-  .tab-content.active { display: block; }
+  .active-model-badge { display: flex; align-items: center; gap: 6px; padding: 4px 8px; background: #f0f6ff; border: 1px solid #cce5ff; border-radius: 6px; font-size: 11px; color: #0969da; max-width: 200px; }
+  .active-model-badge span { font-weight: 600; text-transform: uppercase; font-size: 9px; color: #656d76; flex-shrink: 0; }
+  .active-model-badge code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .content { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  .tab-content { display: none; flex: 1; min-height: 0; flex-direction: column; }
+  .tab-content.active { display: flex; }
+  .tab-content:not(#tabChat) { padding: 16px 20px 24px; overflow-y: auto; }
   .toolbar { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
   .search-wrap { position: relative; flex: 1; min-width: 160px; }
   .search-wrap input { width: 100%; padding: 7px 12px 7px 32px; background: #fff; border: 1px solid #d0d7de; border-radius: 6px; color: #24292f; font-size: 13px; outline: none; }
@@ -317,13 +327,13 @@ const PAGE = `<!DOCTYPE html>
   .model-card.active .model-card-indicator { background: #1a7f37; box-shadow: 0 0 4px rgba(26,127,55,.3); }
   .model-card-name { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; font-size: 12px; color: #24292f; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
   .model-card.active .model-card-name { color: #1a7f37; font-weight: 600; }
-  .model-card-actions { display: none; gap: 2px; flex-shrink: 0; }
+  .model-card-actions { display: none; gap: 4px; flex-shrink: 0; }
   .model-card:hover .model-card-actions { display: flex; }
-  .model-card-actions button { background: none; border: none; color: #656d76; cursor: pointer; padding: 2px 5px; border-radius: 3px; font-size: 12px; }
-  .model-card-actions button:hover { background: #e8eaed; }
-  .model-card-actions .edit-action:hover { color: #9a6700; }
-  .model-card-actions .del-action:hover { color: #cf222e; }
-  .empty-models { padding: 24px 16px; text-align: center; color: #656d76; font-size: 13px; }
+  .icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 0; background: none; border: 1px solid transparent; border-radius: 4px; color: #656d76; cursor: pointer; transition: all .1s; flex-shrink: 0; }
+  .icon-btn:hover { background: #e8eaed; color: #24292f; }
+  .icon-btn.danger:hover { color: #cf222e; background: #ffebe9; border-color: rgba(207,34,46,.1); }
+  .icon-btn.edit:hover { color: #9a6700; background: #fff8c5; border-color: rgba(154,103,0,.1); }
+  .empty-models, .session-empty { padding: 32px 16px; text-align: center; color: #656d76; font-size: 13px; }
   .btn { display: inline-flex; align-items: center; gap: 4px; font-family: inherit; font-size: 12px; font-weight: 500; cursor: pointer; padding: 6px 14px; border-radius: 6px; border: 1px solid #d0d7de; background: #f6f8fa; color: #24292f; white-space: nowrap; transition: background .1s; }
   .btn:hover { background: #e8eaed; }
   .btn-primary { background: #0969da; border-color: #0969da; color: #fff; }
@@ -349,7 +359,6 @@ const PAGE = `<!DOCTYPE html>
   .usage-card-label { font-size: 11px; color: #656d76; text-transform: uppercase; letter-spacing: .05em; }
   .usage-card-value { font-size: 22px; font-weight: 600; color: #1f2328; margin-top: 4px; font-variant-numeric: tabular-nums; }
   .usage-card-note { font-size: 11px; color: #656d76; margin-top: 2px; }
-  .usage-section-title { font-size: 13px; font-weight: 600; color: #1f2328; margin-bottom: 10px; }
   .usage-table-wrap { overflow-x: auto; margin-bottom: 20px; border: 1px solid #d0d7de; border-radius: 8px; background: #fff; }
   .usage-table { width: 100%; border-collapse: collapse; font-size: 12px; }
   .usage-table th { text-align: left; padding: 8px 12px; color: #656d76; font-weight: 500; border-bottom: 1px solid #d0d7de; background: #f6f8fa; white-space: nowrap; }
@@ -390,7 +399,7 @@ const PAGE = `<!DOCTYPE html>
     .usage-grid { grid-template-columns: 1fr 1fr; }
     .content { padding: 12px 12px 20px; }
     .model-bar { margin: 12px 12px 0; }
-    .topbar { padding: 12px 12px; }
+    .topbar { padding: 0 16px; }
   }
   .session-card { background: #fff; border: 1px solid #d0d7de; border-radius: 8px; padding: 14px 16px; margin-bottom: 8px; cursor: pointer; transition: border-color .1s; }
   .session-card:hover { border-color: #0969da; }
@@ -406,31 +415,38 @@ const PAGE = `<!DOCTYPE html>
   .msg-role.assistant { color: #1a7f37; }
   .msg-role.tool { color: #9a6700; }
   .msg-info { font-size: 11px; color: #656d76; }
-  .session-empty { text-align: center; padding: 48px; color: #656d76; font-size: 13px; }
-  .chat-layout { display: flex; gap: 0; height: calc(100vh - 140px); }
-  .chat-sidebar { width: 200px; flex-shrink: 0; overflow-y: auto; border-right: 1px solid #d0d7de; padding: 8px; }
-  .chat-sidebar-item { padding: 8px 10px; border-radius: 6px; font-size: 12px; cursor: pointer; color: #656d76; margin-bottom: 2px; }
-  .chat-sidebar-item:hover { background: #f3f4f6; color: #1f2328; }
-  .chat-sidebar-item.active { background: #e8f0fe; color: #0969da; font-weight: 600; }
+  .chat-layout { display: flex; flex: 1; min-height: 0; background: #fff; }
+  .chat-sidebar { width: 240px; flex-shrink: 0; display: flex; flex-direction: column; border-right: 1px solid #d0d7de; background: #f9f9f9; }
+  .chat-sidebar-header { padding: 12px; border-bottom: 1px solid #d0d7de; }
+  .chat-sidebar-list { flex: 1; overflow-y: auto; padding: 8px; }
+  .chat-sidebar-item { padding: 10px 12px; border-radius: 6px; font-size: 13px; cursor: pointer; color: #656d76; margin-bottom: 2px; border: 1px solid transparent; }
+  .chat-sidebar-item:hover { background: #f0f2f5; }
+  .chat-sidebar-item.active { background: #e8f0fe; color: #0969da; border-color: #cce5ff; font-weight: 600; }
   .chat-sidebar-item .chat-sidebar-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .chat-sidebar-item .chat-sidebar-meta { font-size: 10px; color: #8c959f; margin-top: 1px; }
-  .chat-main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-  .chat-msgs { flex: 1; overflow-y: auto; padding: 12px 16px; }
-  .chat-bubble { margin-bottom: 10px; max-width: 85%; }
-  .chat-bubble.user { margin-left: auto; }
-  .chat-bubble.assistant { margin-right: auto; }
-  .chat-bubble-inner { padding: 10px 14px; border-radius: 10px; font-size: 13px; line-height: 1.5; word-break: break-word; white-space: pre-wrap; }
-  .chat-bubble.user .chat-bubble-inner { background: #0969da; color: #fff; border-bottom-right-radius: 2px; }
-  .chat-bubble.assistant .chat-bubble-inner { background: #f3f4f6; color: #24292f; border-bottom-left-radius: 2px; }
-  .chat-bubble .chat-bubble-time { font-size: 10px; color: #8c959f; margin-top: 3px; }
-  .chat-bubble.user .chat-bubble-time { text-align: right; }
-  .chat-input-bar { display: flex; gap: 8px; padding: 10px 16px; border-top: 1px solid #d0d7de; background: #fff; }
-  .chat-input-bar textarea { flex: 1; resize: none; padding: 8px 12px; border: 1px solid #d0d7de; border-radius: 8px; font-family: inherit; font-size: 13px; outline: none; }
-  .chat-input-bar textarea:focus { border-color: #0969da; box-shadow: 0 0 0 2px rgba(9,105,218,.15); }
-  .chat-input-bar button { align-self: flex-end; }
-  .chat-welcome { text-align: center; padding: 48px 16px; color: #656d76; font-size: 13px; }
-  .chat-welcome .new-session-btn { margin-top: 12px; }
-  .chat-loading { text-align: center; padding: 24px; color: #8c959f; font-size: 12px; }
+  .chat-sidebar-item .chat-sidebar-meta { font-size: 11px; color: #8c959f; margin-top: 2px; }
+  .chat-main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; background: #fff; }
+  .chat-msgs-wrapper { flex: 1; overflow-y: auto; display: flex; flex-direction: column; align-items: center; }
+  .chat-msgs { width: 100%; max-width: 800px; padding: 24px; flex: 1; display: flex; flex-direction: column; }
+  .chat-bubble { margin-bottom: 16px; display: flex; flex-direction: column; }
+  .chat-bubble.user { align-items: flex-end; }
+  .chat-bubble.assistant { align-items: flex-start; }
+  .chat-bubble-label { font-size: 11px; font-weight: 600; color: #656d76; margin-bottom: 4px; padding: 0 4px; text-transform: uppercase; letter-spacing: 0.02em; }
+  .chat-bubble-inner { padding: 12px 16px; border-radius: 12px; font-size: 14px; line-height: 1.5; word-break: break-word; max-width: 85%; }
+  .chat-bubble-inner p { margin-bottom: 12px; }
+  .chat-bubble-inner p:last-child, .chat-bubble-inner ul:last-child, .chat-bubble-inner ol:last-child { margin-bottom: 0; }
+  .chat-bubble-inner ul, .chat-bubble-inner ol { padding-left: 24px; margin-bottom: 12px; }
+  .chat-bubble-inner li { margin-bottom: 4px; }
+  .chat-bubble-inner pre { margin-bottom: 12px; }
+  .chat-bubble.user .chat-bubble-inner { background: #0969da; color: #fff; border-bottom-right-radius: 4px; }
+  .chat-bubble.assistant .chat-bubble-inner { background: #f3f4f6; color: #24292f; border-bottom-left-radius: 4px; }
+  .chat-bubble .chat-bubble-time { font-size: 10px; color: #8c959f; margin-top: 4px; padding: 0 4px; }
+  .chat-input-wrapper { border-top: 1px solid transparent; background: linear-gradient(180deg, rgba(255,255,255,0) 0%, #fff 20%); padding: 10px 0 24px; display: flex; justify-content: center; }
+  .chat-input-bar { display: flex; align-items: flex-end; gap: 8px; width: 100%; max-width: 800px; padding: 10px 12px; border: 1px solid #d0d7de; border-radius: 12px; background: #fff; box-shadow: 0 4px 12px rgba(0,0,0,0.05); transition: border-color 0.2s, box-shadow 0.2s; margin: 0 24px; }
+  .chat-input-bar:focus-within { border-color: #0969da; box-shadow: 0 4px 12px rgba(9,105,218,0.1); }
+  .chat-input-bar textarea { flex: 1; resize: none; padding: 6px; border: none; font-family: inherit; font-size: 14px; outline: none; background: transparent; max-height: 200px; }
+  .chat-input-bar button { align-self: flex-end; padding: 8px 16px; border-radius: 8px; font-weight: 600; }
+  .chat-welcome { text-align: center; padding: 48px 16px; color: #656d76; font-size: 14px; margin: auto; }
+  .chat-loading { text-align: center; padding: 24px; color: #8c959f; font-size: 12px; margin: auto; }
   @media (max-width: 767px) {
     .chat-sidebar { display: none; }
     .chat-bubble { max-width: 95%; }
@@ -474,13 +490,11 @@ const PAGE = `<!DOCTYPE html>
       <button class="menu-toggle" id="menuToggle" onclick="toggleSidebar()">&#x2630;</button>
       <h1 id="pageTitle">Models</h1>
       <div class="topbar-right">
+        <div class="active-model-badge" id="activeModelBadge">
+          <span style="display:flex;align-items:center;gap:4px"><svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor"><path d="M8 0a8 8 0 110 16A8 8 0 018 0zm1.062 4.312a.75.75 0 00-1.062 0l-3.25 3.25a.75.75 0 000 1.062l3.25 3.25a.75.75 0 101.062-1.062L6.81 8l2.25-2.25a.75.75 0 000-1.062z"/></svg>Model</span>
+          <code id="currentModel">&mdash;</code>
+        </div>
         <button class="btn btn-sm" id="btnRefresh" style="font-size:13px">&#x21bb;</button>
-      </div>
-    </div>
-    <div class="model-bar">
-      <div>
-        <div class="model-bar-label">Active Model</div>
-        <div class="model-bar-id" id="currentModel">&mdash;</div>
       </div>
     </div>
     <div class="content">
@@ -499,6 +513,11 @@ const PAGE = `<!DOCTYPE html>
         <div id="usageContent"><div class="loading">Loading...</div></div>
       </div>
       <div class="tab-content" id="tabPlugins">
+        <div class="toolbar">
+          <div style="flex:1"></div>
+          <button class="btn btn-primary" id="btnAddPlugin">+ Add Plugin</button>
+          <button class="btn" id="btnAddAgent">+ Add Agent</button>
+        </div>
         <div id="pluginsContent"><div class="loading">Loading...</div></div>
       </div>
       <div class="tab-content" id="tabSessions">
@@ -509,10 +528,14 @@ const PAGE = `<!DOCTYPE html>
         <div class="chat-layout">
           <div class="chat-sidebar" id="chatSessionList"></div>
           <div class="chat-main" id="chatMain">
-            <div id="chatMessages" class="chat-msgs"></div>
-            <div class="chat-input-bar">
-              <textarea id="chatInput" rows="2" placeholder="Type a message..." autocomplete="off"></textarea>
-              <button class="btn btn-primary" id="chatSendBtn">Send</button>
+            <div class="chat-msgs-wrapper" id="chatMessagesWrapper">
+              <div id="chatMessages" class="chat-msgs"></div>
+            </div>
+            <div class="chat-input-wrapper">
+              <div class="chat-input-bar">
+                <textarea id="chatInput" rows="2" placeholder="Type a message..." autocomplete="off"></textarea>
+                <button class="btn btn-primary" id="chatSendBtn">Send</button>
+              </div>
             </div>
           </div>
         </div>
@@ -536,6 +559,8 @@ const PAGE = `<!DOCTYPE html>
 const $ = (id) => document.getElementById(id);
 let modalCallback = null;
 let searchTimer = null;
+const iconX = '<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><path d="M3.72 3.72a.75.75 0 011.06 0L8 6.94l3.22-3.22a.75.75 0 111.06 1.06L9.06 8l3.22 3.22a.75.75 0 11-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 01-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 010-1.06z"/></svg>';
+const iconPen = '<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><path d="M11.013 1.427a1.75 1.75 0 012.474 0l1.086 1.086a1.75 1.75 0 010 2.474l-8.61 8.61c-.21.21-.47.364-.756.445l-3.251.93a.75.75 0 01-.927-.928l.929-3.25a1.75 1.75 0 01.445-.758l8.61-8.61zm1.414 1.06a.25.25 0 00-.354 0L10.811 3.75l1.439 1.44 1.263-1.263a.25.25 0 000-.354l-1.086-1.086zM11.189 6.25L9.75 4.81l-6.286 6.287a.25.25 0 00-.064.108l-.558 1.953 1.953-.558a.249.249 0 00.108-.064l6.286-6.286z"/></svg>';
 
 function toast(msg, err) {
   const t = $("toast");
@@ -709,6 +734,11 @@ function toggleSidebar() {
 }
 
 async function loadModels() {
+  function updateModelUI() {
+  const m = _config?.current;
+  $("currentModel").textContent = m ? (m.provider + "/" + m.id) : "None";
+  $("activeModelBadge").style.display = m ? "flex" : "none";
+}
   const r = await fetch("/api/config");
   const cfg = await r.json();
   $("currentModel").textContent = cfg.current || "(none)";
@@ -716,17 +746,17 @@ async function loadModels() {
   let html = "";
   for (const [prov, data] of Object.entries(cfg.providers)) {
     const total = Object.keys(data.models).length;
-    const npm = data.npm ? '<span class="provider-npm">' + data.npm + "</span>" : "";
-    html += '<div class="provider" data-prov="' + prov + '">';
+    const npm = data.npm ? '<span class="provider-npm">' + escHtml(data.npm) + "</span>" : "";
+    html += '<div class="provider" data-prov="' + escHtml(prov) + '">';
     html += '<div class="provider-header">';
       html += '<span class="provider-chevron open">&#x25B6;</span>';
-      html += '<span class="provider-name">' + prov + "</span>";
+      html += '<span class="provider-name">' + escHtml(prov) + "</span>";
 
       html += npm;
       html += '<span class="provider-badge">' + total + " model" + (total !== 1 ? "s" : "") + "</span>";
       html += '<div class="provider-actions">';
-    html += '<button class="add-model-btn" data-prov="' + prov + '" title="Add model">+</button>';
-    html += '<button class="del-prov-btn" data-prov="' + prov + '" title="Delete provider">&#x2715;</button>';
+    html += '<button class="add-model-btn" data-prov="' + escHtml(prov) + '" title="Add model">+</button>';
+    html += '<button class="icon-btn danger del-prov-btn" data-prov="' + escHtml(prov) + '" title="Delete provider">' + iconX + '</button>';
     html += "</div></div>";
     html += '<div class="provider-models open"><div class="model-grid">';
     if (total === 0) {
@@ -735,12 +765,12 @@ async function loadModels() {
       for (const [key, val] of Object.entries(data.models)) {
         const fullId = prov + "/" + key;
         const active = fullId === cfg.current;
-        html += '<div class="model-card' + (active ? " active" : "") + '" data-model="' + fullId + '">';
+        html += '<div class="model-card' + (active ? " active" : "") + '" data-model="' + escHtml(fullId) + '">';
         html += '<span class="model-card-indicator"></span>';
-        html += '<span class="model-card-name" title="' + (val.name || key) + '">' + (val.name || key) + "</span>";
+        html += '<span class="model-card-name" title="' + escHtml(val.name || key) + '">' + escHtml(val.name || key) + "</span>";
         html += '<span class="model-card-actions">';
-        html += '<button class="edit-action" data-action="edit" data-model="' + fullId + '" title="Edit">&#x270E;</button>';
-        html += '<button class="del-action" data-action="del" data-model="' + fullId + '" title="Delete">&#x2715;</button>';
+        html += '<button class="icon-btn edit edit-action" data-action="edit" data-model="' + escHtml(fullId) + '" title="Edit">' + iconPen + '</button>';
+        html += '<button class="icon-btn danger del-action" data-action="del" data-model="' + escHtml(fullId) + '" title="Delete">' + iconX + '</button>';
         html += '</span></div>';
       }
     }
@@ -764,19 +794,19 @@ async function loadUsage() {
     html += '</div>';
 
     if (d.recent.length) {
-      html += '<div class="usage-section-title">Recent Requests</div>';
+      html += '<div class="section-title">Recent Requests</div>';
       html += '<div class="usage-table-wrap"><table class="usage-table"><thead><tr><th>Model</th><th class="num-cell">In</th><th class="num-cell">Out</th><th>When</th></tr></thead><tbody>';
       for (const r of d.recent) {
-        html += '<tr><td class="model-cell">' + r.model + '</td><td class="num-cell">' + fmtNum(r.tokens_input) + '&#8593;</td><td class="num-cell">' + fmtNum(r.tokens_output) + '&#8595;</td><td class="when-cell">' + fmtTime(r.time_created) + '</td></tr>';
+        html += '<tr><td class="model-cell">' + escHtml(r.model) + '</td><td class="num-cell">' + fmtNum(r.tokens_input) + '&#8593;</td><td class="num-cell">' + fmtNum(r.tokens_output) + '&#8595;</td><td class="when-cell">' + fmtTime(r.time_created) + '</td></tr>';
       }
       html += '</tbody></table></div>';
     }
 
     if (d.byModel.length) {
-      html += '<div class="usage-section-title">Usage by Model</div>';
+      html += '<div class="section-title">Usage by Model</div>';
       html += '<div class="usage-table-wrap"><table class="usage-table"><thead><tr><th>Model</th><th class="num-cell">Requests</th><th class="num-cell">Input</th><th class="num-cell">Output</th><th class="cost-cell">Cost</th><th>Last Used</th></tr></thead><tbody>';
       for (const m of d.byModel) {
-        html += '<tr><td class="model-cell">' + m.model + '</td><td class="num-cell">' + fmtNum(m.requests) + '</td><td class="num-cell">' + fmtNum(m.tokens_in) + '</td><td class="num-cell">' + fmtNum(m.tokens_out) + '</td><td class="cost-cell">$' + Number(m.cost).toFixed(4) + '</td><td class="when-cell">' + fmtTime(m.last_used) + '</td></tr>';
+        html += '<tr><td class="model-cell">' + escHtml(m.model) + '</td><td class="num-cell">' + fmtNum(m.requests) + '</td><td class="num-cell">' + fmtNum(m.tokens_in) + '</td><td class="num-cell">' + fmtNum(m.tokens_out) + '</td><td class="cost-cell">$' + Number(m.cost).toFixed(4) + '</td><td class="when-cell">' + fmtTime(m.last_used) + '</td></tr>';
       }
       html += '</tbody></table></div>';
     }
@@ -789,20 +819,17 @@ async function loadUsage() {
 async function loadPlugins() {
   const r = await fetch("/api/plugins");
   const d = await r.json();
-  let html = '<div class="section-title">Plugins</div>';
-  html += '<div class="toolbar" style="margin-bottom:10px"><button class="btn btn-primary" id="btnAddPlugin">+ Add Plugin</button></div>';
-  html += '<div class="plugin-list">';
+  let html = '<div class="plugin-list">';
   if (!d.plugins?.length) {
     html += '<div class="empty-models">No plugins installed.</div>';
   } else {
     for (const p of d.plugins) {
-      html += '<div class="plugin-item"><span class="plugin-url">' + p + '</span><button class="btn btn-sm del-plugin-btn" data-url="' + p.replace(/"/g, '&quot;') + '">&#x2715;</button></div>';
+      html += '<div class="plugin-item"><span class="plugin-url">' + escHtml(p) + '</span><button class="icon-btn danger del-plugin-btn" data-url="' + escHtml(p) + '">' + iconX + '</button></div>';
     }
   }
   html += '</div>';
 
   html += '<div class="section-title" style="margin-top:24px">Agents</div>';
-  html += '<div class="toolbar" style="margin-bottom:10px"><button class="btn btn-primary" id="btnAddAgent">+ Add Agent</button></div>';
   html += '<div class="agent-list">';
   const agents = d.agents || {};
   const keys = Object.keys(agents);
@@ -811,12 +838,12 @@ async function loadPlugins() {
   } else {
     for (const name of keys) {
       const a = agents[name];
-      html += '<div class="agent-card" data-agent="' + name + '">';
-      html += '<span class="agent-name">' + name + '</span>';
-      html += '<span class="agent-meta">' + (a.mode || "subagent") + ' &middot; ' + (a.model || "-") + '</span>';
-      html += '<button class="btn btn-sm edit-agent-btn" data-agent="' + name + '">&#x270E;</button>';
-      html += '<button class="btn btn-sm del-agent-btn" data-agent="' + name + '">&#x2715;</button>';
-      if (a.description) html += '<div class="agent-desc">' + a.description + '</div>';
+      html += '<div class="agent-card" data-agent="' + escHtml(name) + '">';
+      html += '<span class="agent-name">' + escHtml(name) + '</span>';
+      html += '<span class="agent-meta">' + escHtml(a.mode || "subagent") + ' &middot; ' + escHtml(a.model || "-") + '</span>';
+      html += '<button class="icon-btn edit edit-agent-btn" data-agent="' + escHtml(name) + '">' + iconPen + '</button>';
+      html += '<button class="icon-btn danger del-agent-btn" data-agent="' + escHtml(name) + '">' + iconX + '</button>';
+      if (a.description) html += '<div class="agent-desc">' + escHtml(a.description) + '</div>';
       html += '</div>';
     }
   }
@@ -830,11 +857,13 @@ function showAddPluginModal() {
     async () => {
       const url = $("fPluginUrl").value.trim();
       if (!url) return toast("Plugin URL is required", true);
-      const r = await fetch("/api/plugins", { method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ url }) });
-      const d = await r.json();
-      if (d.ok) { toast("Plugin added"); closeModal(); loadPlugins(); } else toast(d.error || "Error", true);
+      try {
+        const r = await fetch("/api/plugins", { method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ url }) });
+        const d = await r.json();
+        if (d.ok) { toast("Plugin added"); closeModal(); loadPlugins(); } else toast(d.error || "Error", true);
+      } catch (e) { toast("Network error", true); }
     });
 }
 
@@ -845,26 +874,29 @@ function showAddAgentModal(editName) {
     const cfg = d.config?.provider || {};
     for (const [prov, data] of Object.entries(cfg)) {
       for (const key of Object.keys(data.models || {})) {
-        modelOpts.push('<option value="' + prov + '/' + key + '">' + prov + '/' + key + '</option>');
+        const val = escHtml(prov + '/' + key);
+        modelOpts.push('<option value="' + val + '">' + val + '</option>');
       }
     }
     const curr = isEdit ? (d.agents?.[editName] || {}) : {};
     openModal(isEdit ? "Edit Agent" : "Add Agent",
-      '<label>Name</label><input id="fAgentName" value="' + (isEdit ? editName : '') + '"' + (isEdit ? ' readonly' : '') + ' placeholder="e.g. my-agent" autofocus>' +
+      '<label>Name</label><input id="fAgentName" value="' + escHtml(isEdit ? editName : '') + '"' + (isEdit ? ' readonly' : '') + ' placeholder="e.g. my-agent" autofocus>' +
       '<label>Mode</label><select id="fAgentMode"><option value="subagent"' + (curr.mode === "subagent" ? " selected" : "") + '>subagent</option></select>' +
       '<label>Model</label><select id="fAgentModel"><option value="">Default</option>' + modelOpts.join("") + '</select>' +
-      '<label>Description</label><textarea id="fAgentDesc" placeholder="Brief description">' + (curr.description || "") + '</textarea>',
+      '<label>Description</label><textarea id="fAgentDesc" placeholder="Brief description">' + escHtml(curr.description || "") + '</textarea>',
       async () => {
         const name = $("fAgentName").value.trim();
         if (!name) return toast("Name is required", true);
         const mode = $("fAgentMode").value;
         const model = $("fAgentModel").value || undefined;
         const description = $("fAgentDesc").value.trim() || undefined;
-        const r = await fetch("/api/agents", { method: isEdit ? "PUT" : "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ name, mode, model, description }) });
-        const res = await r.json();
-        if (res.ok) { toast(isEdit ? "Agent updated" : "Agent added"); closeModal(); loadPlugins(); } else toast(res.error || "Error", true);
+        try {
+          const r = await fetch("/api/agents", { method: isEdit ? "PUT" : "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ name, mode, model, description }) });
+          const res = await r.json();
+          if (res.ok) { toast(isEdit ? "Agent updated" : "Agent added"); closeModal(); loadPlugins(); } else toast(res.error || "Error", true);
+        } catch (e) { toast("Network error", true); }
       });
     if (curr.model) $("fAgentModel").value = curr.model;
   });
@@ -883,11 +915,13 @@ function showAddModelModal(provider) {
         const p = $("fProvider").value;
         const key = $("fKey").value.trim();
         if (!key) return toast("Model key is required", true);
-        const r = await fetch("/api/models", { method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ provider: p, key, name: $("fName").value.trim() || undefined }) });
-        const d = await r.json();
-        if (d.ok) { toast("Model added"); closeModal(); loadModels(); } else toast(d.error || "Error", true);
+        try {
+          const r = await fetch("/api/models", { method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ provider: p, key, name: $("fName").value.trim() || undefined }) });
+          const d = await r.json();
+          if (d.ok) { toast("Model added"); closeModal(); loadModels(); } else toast(d.error || "Error", true);
+        } catch (e) { toast("Network error", true); }
       });
   });
 }
@@ -902,11 +936,13 @@ function showEditModelModal(fullId) {
     async () => {
       const newKey = $("fKey").value.trim();
       if (!newKey) return toast("Model key is required", true);
-      const r = await fetch("/api/models", { method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ provider, key, newKey, name: $("fName").value.trim() || undefined }) });
-      const d = await r.json();
-      if (d.ok) { toast("Model updated"); closeModal(); loadModels(); } else toast(d.error || "Error", true);
+      try {
+        const r = await fetch("/api/models", { method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ provider, key, newKey, name: $("fName").value.trim() || undefined }) });
+        const d = await r.json();
+        if (d.ok) { toast("Model updated"); closeModal(); loadModels(); } else toast(d.error || "Error", true);
+      } catch (e) { toast("Network error", true); }
     });
   fetch("/api/config").then(r => r.json()).then(cfg => {
     const m = cfg.providers?.[provider]?.models?.[key];
@@ -937,7 +973,7 @@ async function loadSessions() {
       html += '<div class="session-card" data-sid="' + s.id + '">';
       html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px">';
       html += '<div class="session-card-title">' + title + '</div>';
-      html += '<button class="btn btn-sm del-session-btn" data-sid="' + s.id + '" title="Delete">&#x2715;</button>';
+      html += '<button class="icon-btn danger del-session-btn" data-sid="' + s.id + '" title="Delete">' + iconX + '</button>';
       html += '</div><div class="session-card-meta">';
       html += '<span class="model-tag">' + model.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;") + '</span>';
       html += '<span>' + s.msg_count + ' msgs</span>';
@@ -1042,7 +1078,7 @@ async function loadChat() {
   try {
     const r = await fetch("/api/sessions");
     const d = await r.json();
-    let html = '<div style="padding:8px 10px;font-size:11px;font-weight:600;color:#656d76;text-transform:uppercase">Sessions</div>';
+    let html = '<div class="chat-sidebar-header"><button class="btn btn-primary" id="chatNewBtn" style="width:100%;justify-content:center">+ New Chat</button></div><div class="chat-sidebar-list">';
     if (d.sessions?.length) {
       for (const s of d.sessions) {
         let model = s.model || "";
@@ -1052,19 +1088,19 @@ async function loadChat() {
         html += '<div class="chat-sidebar-item' + active + '" data-csid="' + s.id + '">';
         html += '<div class="chat-sidebar-title">' + title + '</div>';
         html += '<div class="chat-sidebar-meta" style="display:flex;align-items:center;gap:6px">';
-        html += '<span>' + fmtTime(s.time_created) + '</span>';
-        html += '<button class="btn btn-sm del-chat-btn" data-csid="' + s.id + '" title="Delete" style="color:#8c959f;padding:1px 4px">&#x2715;</button>';
+        html += '<span style="flex:1">' + fmtTime(s.time_created) + '</span>';
+        html += '<button class="icon-btn danger del-chat-btn" data-csid="' + s.id + '" title="Delete">' + iconX + '</button>';
         html += '</div></div>';
       }
     }
-    html += '<div style="padding:8px 10px"><button class="btn btn-sm" id="chatNewBtn" style="width:100%">+ New Chat</button></div>';
+    html += '</div>';
     sidebar.innerHTML = html;
     if (!_chatSessionId) showChatWelcome();
   } catch {}
 }
 
 function showChatWelcome() {
-  $("chatMessages").innerHTML = '<div class="chat-welcome">Select a session or start a new chat<div class="new-session-btn"><button class="btn btn-sm btn-primary" id="chatNewBtn2">+ New Chat</button></div></div>';
+  $("chatMessages").innerHTML = '<div class="chat-welcome">Select a session from the sidebar or start a new chat<div class="new-session-btn"><button class="btn btn-primary" id="chatNewBtn2" style="font-size:14px;padding:10px 20px;border-radius:24px;margin-top:16px">+ New Chat</button></div></div>';
 }
 
 async function selectChatSession(id) {
@@ -1100,12 +1136,13 @@ async function selectChatSession(id) {
         text = data.summary?.title || "";
       }
       html += '<div class="chat-bubble ' + role + '">';
+      html += '<div class="chat-bubble-label">' + (role === "user" ? "You" : (role === "tool" ? "Tool" : "Assistant")) + '</div>';
       html += '<div class="chat-bubble-inner">' + renderMd(text || "(no content)") + '</div>';
       if (time) html += '<div class="chat-bubble-time">' + time + '</div>';
       html += '</div>';
     }
     $("chatMessages").innerHTML = html;
-    $("chatMessages").scrollTop = $("chatMessages").scrollHeight;
+    $("chatMessagesWrapper").scrollTop = $("chatMessagesWrapper").scrollHeight;
   } catch {
     $("chatMessages").innerHTML = '<div class="chat-welcome">Error loading session.</div>';
   }
@@ -1122,10 +1159,10 @@ async function sendChatMessage() {
 
   // Add user bubble
   $("chatMessages").insertAdjacentHTML("beforeend",
-    '<div class="chat-bubble user"><div class="chat-bubble-inner">' + escHtml(msg) + '</div><div class="chat-bubble-time">just now</div></div>');
+    '<div class="chat-bubble user"><div class="chat-bubble-label">You</div><div class="chat-bubble-inner">' + escHtml(msg) + '</div><div class="chat-bubble-time">just now</div></div>');
   $("chatMessages").insertAdjacentHTML("beforeend",
-    '<div class="chat-bubble assistant" id="chatPending"><div class="chat-bubble-inner" style="color:#8c959f">Thinking...</div></div>');
-  $("chatMessages").scrollTop = $("chatMessages").scrollHeight;
+    '<div class="chat-bubble assistant" id="chatPending"><div class="chat-bubble-label">Assistant</div><div class="chat-bubble-inner" style="color:#8c959f">Thinking...</div></div>');
+  $("chatMessagesWrapper").scrollTop = $("chatMessagesWrapper").scrollHeight;
 
   try {
     const r = await fetch("/api/chat", {
@@ -1192,11 +1229,13 @@ function showAddProviderModal() {
       const npm = $("fNpm").value;
       const baseURL = $("fBaseURL").value.trim() || undefined;
       const apiKey = $("fApiKey").value.trim() || undefined;
-      const r = await fetch("/api/providers", { method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ name, npm, baseURL, apiKey }) });
-      const d = await r.json();
-      if (d.ok) { toast("Provider added"); closeModal(); loadModels(); } else toast(d.error || "Error", true);
+      try {
+        const r = await fetch("/api/providers", { method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ name, npm, baseURL, apiKey }) });
+        const d = await r.json();
+        if (d.ok) { toast("Provider added"); closeModal(); loadModels(); } else toast(d.error || "Error", true);
+      } catch (e) { toast("Network error", true); }
     });
 }
 
@@ -1489,37 +1528,41 @@ function createServer(opts?: { port?: number }) {
 
       // --- Usage ---
       if (url.pathname === "/api/usage") {
-        const db = getDB();
-        if (!db) return json({ summary: { requests: 0, tokens_in: 0, tokens_out: 0, cost: 0 }, recent: [], byModel: [] });
+        try {
+          const db = getDB();
+          if (!db) return json({ summary: { requests: 0, tokens_in: 0, tokens_out: 0, cost: 0 }, recent: [], byModel: [] });
 
-        const summary = db.query(`
-          SELECT
-            COUNT(*) AS requests,
-            COALESCE(SUM(tokens_input),0) AS tokens_in,
-            COALESCE(SUM(tokens_output),0) AS tokens_out,
-            COALESCE(ROUND(SUM(cost),6),0) AS cost
-          FROM session WHERE model IS NOT NULL AND model != ''
-        `).get() as any;
+          const summary = db.query(`
+            SELECT
+              COUNT(*) AS requests,
+              COALESCE(SUM(tokens_input),0) AS tokens_in,
+              COALESCE(SUM(tokens_output),0) AS tokens_out,
+              COALESCE(ROUND(SUM(cost),6),0) AS cost
+            FROM session WHERE model IS NOT NULL AND model != ''
+          `).get() as any;
 
-        const recent = db.query(`
-          SELECT COALESCE(json_extract(model, '$.id'), model) AS model, tokens_input, tokens_output, time_created
-          FROM session WHERE model IS NOT NULL AND model != ''
-          ORDER BY time_created DESC LIMIT 50
-        `).all() as any[];
+          const recent = db.query(`
+            SELECT COALESCE(json_extract(model, '$.id'), model) AS model, tokens_input, tokens_output, time_created
+            FROM session WHERE model IS NOT NULL AND model != ''
+            ORDER BY time_created DESC LIMIT 50
+          `).all() as any[];
 
-        const byModel = db.query(`
-          SELECT
-            COALESCE(json_extract(model, '$.id'), model) AS model,
-            COUNT(*) AS requests,
-            COALESCE(SUM(tokens_input),0) AS tokens_in,
-            COALESCE(SUM(tokens_output),0) AS tokens_out,
-            COALESCE(ROUND(SUM(cost),6),0) AS cost,
-            MAX(time_created) AS last_used
-          FROM session WHERE model IS NOT NULL AND model != ''
-          GROUP BY model ORDER BY last_used DESC
-        `).all() as any[];
+          const byModel = db.query(`
+            SELECT
+              COALESCE(json_extract(model, '$.id'), model) AS model,
+              COUNT(*) AS requests,
+              COALESCE(SUM(tokens_input),0) AS tokens_in,
+              COALESCE(SUM(tokens_output),0) AS tokens_out,
+              COALESCE(ROUND(SUM(cost),6),0) AS cost,
+              MAX(time_created) AS last_used
+            FROM session WHERE model IS NOT NULL AND model != ''
+            GROUP BY model ORDER BY last_used DESC
+          `).all() as any[];
 
-        return json({ summary, recent, byModel });
+          return json({ summary, recent, byModel });
+        } catch (e: any) {
+          return json({ summary: { requests: 0, tokens_in: 0, tokens_out: 0, cost: 0 }, recent: [], byModel: [] });
+        }
       }
 
       // --- Sessions ---
@@ -1527,20 +1570,28 @@ function createServer(opts?: { port?: number }) {
         if (req.method === "DELETE") {
           const { id } = await req.json();
           if (!id) return json({ ok: false, error: "session id required" }, 400);
-          const db = getDB();
-          if (!db) return json({ ok: false, error: "database not available" }, 500);
-          db.run("DELETE FROM message WHERE session_id = ?", [id]);
-          db.run("DELETE FROM session WHERE id = ?", [id]);
-          return json({ ok: true });
+          try {
+            const db = getDB();
+            if (!db) return json({ ok: false, error: "database not available" }, 500);
+            db.run("DELETE FROM message WHERE session_id = ?", [id]);
+            db.run("DELETE FROM session WHERE id = ?", [id]);
+            return json({ ok: true });
+          } catch (e: any) {
+            return json({ ok: false, error: e.message }, 500);
+          }
         }
-        const db = getDB();
-        if (!db) return json({ sessions: [] });
-        const sessions = db.query(`
-          SELECT s.id, s.slug, s.title, s.directory, s.agent, s.model, s.time_created, s.time_updated, s.tokens_input, s.tokens_output, s.tokens_reasoning, s.cost,
-            (SELECT COUNT(*) FROM message m WHERE m.session_id = s.id) AS msg_count
-          FROM session s ORDER BY s.time_created DESC LIMIT 100
-        `).all() as any[];
-        return json({ sessions });
+        try {
+          const db = getDB();
+          if (!db) return json({ sessions: [] });
+          const sessions = db.query(`
+            SELECT s.id, s.slug, s.title, s.directory, s.agent, s.model, s.time_created, s.time_updated, s.tokens_input, s.tokens_output, s.tokens_reasoning, s.cost,
+              (SELECT COUNT(*) FROM message m WHERE m.session_id = s.id) AS msg_count
+            FROM session s ORDER BY s.time_created DESC LIMIT 100
+          `).all() as any[];
+          return json({ sessions });
+        } catch (e: any) {
+          return json({ sessions: [] });
+        }
       }
 
       if (url.pathname.startsWith("/api/sessions/")) {
@@ -1577,19 +1628,23 @@ function createServer(opts?: { port?: number }) {
         }
 
         // Fallback: SQLite (metadata only)
-        const db = getDB();
-        if (!db) return json({ session: null, messages: [], source: "db" });
-        const session = db.query(`
-          SELECT *, (SELECT COUNT(*) FROM message m WHERE m.session_id = s.id) AS msg_count
-          FROM session s WHERE id = ?
-        `).get(sessionId) as any;
-        if (!session) return json({ error: "not found" }, 404);
-        const messages = db.query(`
-          SELECT id, session_id, time_created, time_updated, data
-          FROM message WHERE session_id = ?
-          ORDER BY time_created ASC
-        `).all(sessionId) as any[];
-        return json({ session, messages, source: "db" });
+        try {
+          const db = getDB();
+          if (!db) return json({ session: null, messages: [], source: "db" });
+          const session = db.query(`
+            SELECT *, (SELECT COUNT(*) FROM message m WHERE m.session_id = s.id) AS msg_count
+            FROM session s WHERE id = ?
+          `).get(sessionId) as any;
+          if (!session) return json({ error: "not found" }, 404);
+          const messages = db.query(`
+            SELECT id, session_id, time_created, time_updated, data
+            FROM message WHERE session_id = ?
+            ORDER BY time_created ASC
+          `).all(sessionId) as any[];
+          return json({ session, messages, source: "db" });
+        } catch (e: any) {
+          return json({ session: null, messages: [], source: "db", error: e.message });
+        }
       }
 
       if (url.pathname === "/api/debug-sdk") {
@@ -1662,16 +1717,17 @@ function createServer(opts?: { port?: number }) {
       if (url.pathname === "/api/plugins") {
         if (req.method === "GET") {
           const cfg = await readConfig();
-          return json({ plugins: cfg.raw?.plugin || cfg.raw?.plugins || [], agents: cfg.raw?.agent || cfg.raw?.agents || {}, config: cfg.raw });
+          return json({ plugins: cfg.raw?.plugins || cfg.raw?.plugin || [], agents: cfg.raw?.agents || cfg.raw?.agent || {}, config: cfg.raw });
         }
         if (req.method === "POST") {
           const { url: pluginUrl } = await req.json();
           if (!pluginUrl) return json({ ok: false, error: "url required" }, 400);
           try {
           await writeConfig((cfg: any) => {
-            if (!cfg.plugin) cfg.plugin = [];
-            if (cfg.plugin.includes(pluginUrl)) throw new Error("plugin already exists");
-            cfg.plugin.push(pluginUrl);
+            if (!cfg.plugins) cfg.plugins = cfg.plugin || [];
+            if (cfg.plugins.includes(pluginUrl)) throw new Error("plugin already exists");
+            cfg.plugins.push(pluginUrl);
+            delete cfg.plugin;
             return cfg;
           }, undefined, pluginUrl);
             return json({ ok: true });
@@ -1684,8 +1740,10 @@ function createServer(opts?: { port?: number }) {
           if (!pluginUrl) return json({ ok: false, error: "url required" }, 400);
           try {
           await writeConfig((cfg: any) => {
-            if (!cfg.plugin?.includes(pluginUrl)) throw new Error("plugin not found");
-            cfg.plugin = cfg.plugin.filter((p: string) => p !== pluginUrl);
+            const plugins = cfg.plugins || cfg.plugin || [];
+            if (!plugins.includes(pluginUrl)) throw new Error("plugin not found");
+            cfg.plugins = plugins.filter((p: string) => p !== pluginUrl);
+            delete cfg.plugin;
             return cfg;
           }, undefined, pluginUrl);
             return json({ ok: true });
@@ -1702,9 +1760,10 @@ function createServer(opts?: { port?: number }) {
           if (!name) return json({ ok: false, error: "name required" }, 400);
           try {
             await writeConfig((cfg: any) => {
-              if (req.method === "POST" && cfg.agent?.[name]) throw new Error("agent already exists");
-              if (!cfg.agent) cfg.agent = {};
-              cfg.agent[name] = { mode: mode || "subagent", model: model || undefined, description: description || undefined };
+              if (req.method === "POST" && (cfg.agents?.[name] || cfg.agent?.[name])) throw new Error("agent already exists");
+              if (!cfg.agents) cfg.agents = cfg.agent || {};
+              cfg.agents[name] = { mode: mode || "subagent", model: model || undefined, description: description || undefined };
+              delete cfg.agent;
               return cfg;
             }, undefined, name);
             return json({ ok: true });
@@ -1717,8 +1776,9 @@ function createServer(opts?: { port?: number }) {
           if (!name) return json({ ok: false, error: "name required" }, 400);
           try {
             await writeConfig((cfg: any) => {
-              if (!cfg.agent?.[name]) throw new Error("agent not found");
-              delete cfg.agent[name];
+              if (!cfg.agents?.[name] && !cfg.agent?.[name]) throw new Error("agent not found");
+              if (cfg.agents) delete cfg.agents[name];
+              if (cfg.agent) delete cfg.agent[name];
               return cfg;
             }, undefined, name);
             return json({ ok: true });
