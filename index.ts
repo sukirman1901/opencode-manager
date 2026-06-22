@@ -434,6 +434,12 @@ const PAGE = `<!DOCTYPE html>
   .menu-toggle:hover { background: #f3f4f6; color: #1f2328; }
   .sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(27,31,35,.5); z-index: 99; }
   .sidebar-overlay.open { display: block; }
+  .chat-header { display:flex; align-items:center; gap:8px; padding:8px 16px; border-bottom:1px solid var(--border); background:var(--bg-card); flex-wrap:wrap; }
+  .chat-header select { padding:4px 8px; border:1px solid var(--border); border-radius:6px; font-size:12px; background:var(--bg-card); color:var(--text); cursor:pointer; }
+  .chat-header .badge { padding:2px 8px; border-radius:10px; font-size:11px; background:var(--bg-code); color:var(--text-secondary); cursor:pointer; }
+  .chat-header .badge:hover { background:var(--border); }
+  .chat-stop-btn { padding:4px 12px; border-radius:6px; border:1px solid var(--danger); background:transparent; color:var(--danger); font-size:12px; cursor:pointer; font-weight:600; }
+  .chat-stop-btn:hover { background:#ffebe9; }
   @media (min-width: 768px) {
     .sidebar { transition: width .2s ease; }
     .sidebar.collapsed { width: 0 !important; overflow: hidden; border-right: none; }
@@ -594,6 +600,21 @@ const PAGE = `<!DOCTYPE html>
         <div id="sessionDetail" style="display:none"></div>
       </div>
       <div class="tab-content" id="tabChat">
+        <div class="chat-header" id="chatHeader" style="display:none">
+          <select id="chatModeSelect">
+            <option value="autonomous">🤖 Autonomous</option>
+            <option value="plan">📋 Plan</option>
+            <option value="ask">❓ Ask</option>
+          </select>
+          <select id="chatModelSelect" style="max-width:180px">
+            <option value="">Default model</option>
+          </select>
+          <button class="chat-stop-btn" id="chatStopBtn" style="display:none">⏹ Stop</button>
+          <div style="flex:1"></div>
+          <span class="badge" id="chatContextBadge">📎 0 files</span>
+          <span class="badge" id="chatCostBadge">💰 $0.0000</span>
+          <button class="icon-btn" id="chatDarkToggle" title="Toggle dark mode">🌙</button>
+        </div>
         <div class="chat-layout">
           <div class="chat-sidebar" id="chatSessionList"></div>
           <div class="chat-main" id="chatMain">
@@ -1377,6 +1398,18 @@ async function loadChat() {
     }
     html += '</div>';
     sidebar.innerHTML = html;
+    fetch("/api/config").then(r => r.json()).then(cfg => {
+      const sel = $("chatModelSelect");
+      if (!sel) return;
+      const cur = cfg.current || "";
+      sel.innerHTML = '<option value="">Default model</option>';
+      for (const [prov, data] of Object.entries(cfg.providers || {})) {
+        for (const key of Object.keys(data.models || {})) {
+          const full = prov + "/" + key;
+          sel.innerHTML += '<option value="' + full + '"' + (full === cur ? ' selected' : '') + '>' + full + '</option>';
+        }
+      }
+    });
     if (!_chatSessionId) showChatWelcome();
   } catch {}
 }
@@ -1386,6 +1419,7 @@ function showChatWelcome() {
 }
 
 async function selectChatSession(id) {
+  $("chatHeader").style.display = "flex";
   _chatSessionId = id;
   _chatLoading = false;
   document.querySelectorAll(".chat-sidebar-item").forEach(el => el.classList.toggle("active", el.dataset.csid === id));
@@ -1503,6 +1537,15 @@ document.addEventListener("DOMContentLoaded", () => {
       $("chatRepoMenu").style.display = "none";
     }
   });
+  $("chatModeSelect")?.addEventListener("change", (e) => { _chatMode = e.target.value; });
+  $("chatDarkToggle")?.addEventListener("click", () => {
+    _chatDarkMode = !_chatDarkMode;
+    document.body.classList.toggle("dark", _chatDarkMode);
+    $("chatDarkToggle").textContent = _chatDarkMode ? "☀️" : "🌙";
+  });
+  $("chatContextBadge")?.addEventListener("click", () => {
+    // Will be wired to context drawer in Task 6
+  });
 });
 
 let _currentStreamText = "";
@@ -1523,11 +1566,15 @@ async function sendChatMessage(overrideText) {
   $("chatMessagesWrapper").scrollTop = $("chatMessagesWrapper").scrollHeight;
 
   try {
+    _chatAbortController = new AbortController();
+    const signal = _chatAbortController.signal;
+    $("chatStopBtn").style.display = "";
     const payload = { sessionId: _chatSessionId, message: msg };
     if (_chatSelectedRepo) {
       payload.context = "GitHub Repository Context: " + _chatSelectedRepo;
     }
     const r = await fetch("/api/chat", {
+      signal,
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(payload),
@@ -1544,6 +1591,7 @@ async function sendChatMessage(overrideText) {
       _chatLoading = false;
       $("chatSendBtn").disabled = false;
       $("chatSendBtn").textContent = "Send";
+      $("chatStopBtn").style.display = "none";
       return;
     }
 
@@ -1584,9 +1632,15 @@ async function sendChatMessage(overrideText) {
         }
       }
     }
+    $("chatStopBtn").style.display = "none";
   } catch (e) {
-    const pending = $("chatPending");
-    if (pending) pending.outerHTML = '<div class="chat-bubble assistant"><div class="chat-bubble-inner" style="color:#cf222e">Error: connection failed</div></div>';
+    if (e.name === "AbortError") {
+      const pending = $("chatPending");
+      if (pending) pending.outerHTML = '<div class="chat-bubble assistant"><div class="chat-bubble-inner" style="color:var(--text-secondary)">⏹ Stopped</div></div>';
+    } else {
+      const pending = $("chatPending");
+      if (pending) pending.outerHTML = '<div class="chat-bubble assistant"><div class="chat-bubble-inner" style="color:#cf222e">Error: connection failed</div></div>';
+    }
   }
   
   const pending = $("chatPending");
@@ -1940,6 +1994,11 @@ document.addEventListener("keydown", function(e) {
   }
 });
 $("chatSendBtn")?.addEventListener("click", sendChatMessage);
+$("chatStopBtn")?.addEventListener("click", () => {
+  if (_chatAbortController) { _chatAbortController.abort(); }
+  fetch("/api/chat/stop", { method: "POST" }).catch(() => {});
+  $("chatStopBtn").style.display = "none";
+});
 loadModels();
 </script>
 </body>
