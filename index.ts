@@ -1617,6 +1617,7 @@ async function sendChatMessage(overrideText) {
     const signal = _chatAbortController.signal;
     $("chatStopBtn").style.display = "";
     const payload = { sessionId: _chatSessionId, message: msg };
+    payload.mode = _chatMode;
     if (_chatSelectedRepo) {
       payload.context = "GitHub Repository Context: " + _chatSelectedRepo;
     }
@@ -1679,6 +1680,13 @@ async function sendChatMessage(overrideText) {
         }
       }
     }
+    // Estimate cost from response length
+    try {
+      const estTokensOut = Math.ceil(_currentStreamText.length / 4);
+      const estTokensIn = Math.ceil(msg.length / 4);
+      const cost = (estTokensIn * 0.000003 + estTokensOut * 0.000015);
+      $("chatCostBadge").textContent = "\uD83D\uDCB0 $" + cost.toFixed(4);
+    } catch(e) {}
     $("chatStopBtn").style.display = "none";
   } catch (e) {
     if (e.name === "AbortError") {
@@ -1721,8 +1729,8 @@ function handleChatEvent(event) {
     textEl.innerHTML = renderMd(_currentStreamText);
   } else if (event.type === "think" || event.tool === "think") {
     const thought = event.thought || event.args?.thought || "";
-    toolsEl.insertAdjacentHTML("beforeend",
-      '<div style="padding:8px 12px;font-size:13px;color:var(--text-secondary);font-style:italic">\uD83E\uDD14 ' + escHtml(thought) + '</div>');
+    if (textEl) textEl.innerHTML = '<div style="font-style:italic;color:var(--text-secondary)">\uD83E\uDD14 ' + escHtml(thought || "Analyzing...") + '</div>';
+    return;
   } else if (event.type === "tool_call:run_command" || event.type === "run_command" || event.tool === "run_command") {
     const args = event.args || event.arguments || {};
     const cmd = args.command || args.CommandLine || event.command || "";
