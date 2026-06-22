@@ -600,6 +600,7 @@ const PAGE = `<!DOCTYPE html>
             <div class="chat-msgs-wrapper" id="chatMessagesWrapper">
               <div id="chatMessages" class="chat-msgs"></div>
             </div>
+            <div id="chatPendingTools"></div>
             <div class="chat-input-wrapper" style="flex-direction: column; align-items: center;">
               <div style="width: 100%; max-width: 800px; padding: 0 24px; display: flex; flex-direction: column; align-items: flex-start;">
                 <div id="chatRepoDropdown" style="margin-bottom:4px;position:relative;display:inline-block">
@@ -1609,37 +1610,140 @@ function handleChatEvent(event) {
   const toolsEl = $("chatStreamingTools");
   if (!textEl || !toolsEl) return;
 
-  // Handle generic text delta or part streaming
   if (event.type === "text") {
     _currentStreamText += (event.text || event.delta || "");
     textEl.innerHTML = renderMd(_currentStreamText);
   } else if (event.parts) {
-    // some formats send parts directly
     for (const p of event.parts) {
-      if (p.type === "text") {
-        _currentStreamText += p.text;
-      }
+      if (p.type === "text") { _currentStreamText += p.text; }
     }
     textEl.innerHTML = renderMd(_currentStreamText);
+  } else if (event.type === "think" || event.tool === "think") {
+    const thought = event.thought || event.args?.thought || "";
+    toolsEl.insertAdjacentHTML("beforeend",
+      '<div style="padding:8px 12px;font-size:13px;color:var(--text-secondary);font-style:italic">\uD83E\uDD14 ' + escHtml(thought) + '</div>');
   } else if (event.type === "tool_call:run_command" || event.type === "run_command" || event.tool === "run_command") {
     const args = event.args || event.arguments || {};
     const cmd = args.command || args.CommandLine || event.command || "";
-    toolsEl.insertAdjacentHTML("beforeend", 
+    addPendingTool(event, "run_command", cmd);
+    toolsEl.insertAdjacentHTML("beforeend",
       '<div style="margin:8px 0;padding:12px;background:#1f2328;color:#f6f8fa;border-radius:6px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;overflow-x:auto;">$ ' + escHtml(cmd) + '</div>');
+  } else if (event.type === "tool_call:read_file" || event.type === "read_file" || event.tool === "read_file") {
+    const args = event.args || event.arguments || {};
+    const path = args.path || args.targetFile || args.filePath || "";
+    toolsEl.insertAdjacentHTML("beforeend",
+      '<div style="margin:8px 0;padding:10px 12px;background:var(--bg-code);border:1px solid var(--border);border-radius:6px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:var(--primary);display:flex;align-items:center;gap:6px">\uD83D\uDCD6 Reading ' + escHtml(path) + '</div>');
   } else if (event.type === "tool_call:edit_file" || event.type === "edit_file" || event.tool === "edit_file" || event.tool === "replace_file_content" || event.tool === "multi_replace_file_content") {
     const args = event.args || event.arguments || {};
     const target = args.targetFile || args.TargetFile || args.target || "";
-    toolsEl.insertAdjacentHTML("beforeend", 
-      '<div style="margin:8px 0;padding:10px 12px;background:#f0f6ff;border:1px solid #cce5ff;border-radius:6px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:#0969da;display:flex;align-items:center;gap:6px;">' +
-      '<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><path d="M11.013 1.427a1.75 1.75 0 012.474 0l1.086 1.086a1.75 1.75 0 010 2.474l-8.61 8.61c-.21.21-.47.364-.756.445l-3.251.93a.75.75 0 01-.927-.928l.929-3.25a1.75 1.75 0 01.445-.758l8.61-8.61zm1.414 1.06a.25.25 0 00-.354 0L10.811 3.75l1.439 1.44 1.263-1.263a.25.25 0 000-.354l-1.086-1.086zM11.189 6.25L9.75 4.81l-6.286 6.287a.25.25 0 00-.064.108l-.558 1.953 1.953-.558a.249.249 0 00.108-.064l6.286-6.286z"/></svg> ' + 
-      'Editing ' + escHtml(target) + '</div>');
+    addPendingTool(event, "edit_file", target);
+    toolsEl.insertAdjacentHTML("beforeend",
+      '<div style="margin:8px 0;padding:10px 12px;background:#f0f6ff;border:1px solid #cce5ff;border-radius:6px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:var(--primary);display:flex;align-items:center;gap:6px">\uD83D\uDCDD Editing ' + escHtml(target) + '</div>');
+  } else if (event.type === "tool_call:search" || event.type === "search" || event.tool === "search" || event.tool === "grep") {
+    const args = event.args || event.arguments || {};
+    const query = args.query || args.pattern || "";
+    toolsEl.insertAdjacentHTML("beforeend",
+      '<div style="margin:8px 0;padding:10px 12px;background:var(--bg-code);border:1px solid var(--border);border-radius:6px;font-size:12px;color:var(--text);display:flex;align-items:center;gap:6px">\uD83D\uDD0D Searching: <code style="font-size:11px">' + escHtml(query) + '</code></div>');
+  } else if (event.type === "tool_call:glob" || event.tool === "glob") {
+    const args = event.args || event.arguments || {};
+    const pattern = args.pattern || "";
+    toolsEl.insertAdjacentHTML("beforeend",
+      '<div style="margin:8px 0;padding:10px 12px;background:var(--bg-code);border:1px solid var(--border);border-radius:6px;font-size:12px;display:flex;align-items:center;gap:6px">\uD83D\uDCC1 Glob: <code style="font-size:11px">' + escHtml(pattern) + '</code></div>');
+  } else if (event.type === "tool_call:web_search" || event.tool === "web_search") {
+    const args = event.args || event.arguments || {};
+    const q = args.query || "";
+    toolsEl.insertAdjacentHTML("beforeend",
+      '<div style="margin:8px 0;padding:10px 12px;background:var(--bg-code);border:1px solid var(--border);border-radius:6px;font-size:12px;display:flex;align-items:center;gap:6px">\uD83C\uDF10 Searching web: ' + escHtml(q) + '</div>');
+  } else if (event.type === "tool_call:web_fetch" || event.tool === "web_fetch") {
+    const args = event.args || event.arguments || {};
+    const url = args.url || "";
+    toolsEl.insertAdjacentHTML("beforeend",
+      '<div style="margin:8px 0;padding:10px 12px;background:var(--bg-code);border:1px solid var(--border);border-radius:6px;font-size:12px;display:flex;align-items:center;gap:6px">\uD83C\uDF0D Fetching: <code style="font-size:11px">' + escHtml(url) + '</code></div>');
+  } else if (event.type === "tool_call:ask_user" || event.tool === "ask_user") {
+    const args = event.args || event.arguments || {};
+    const question = args.question || args.message || "";
+    addPendingTool(event, "ask_user", question);
+    toolsEl.insertAdjacentHTML("beforeend",
+      '<div style="margin:8px 0;padding:12px;background:#fff8c5;border:1px solid #d4a72c;border-radius:6px;font-size:13px">' +
+      '\u2753 ' + escHtml(question) +
+      '<div style="margin-top:8px;display:flex;gap:6px"><input id="askInput" style="flex:1;padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px" placeholder="Type your answer...">' +
+      '<button class="btn btn-primary btn-sm" onclick="submitAskResponse()">Send</button></div></div>');
+  } else if (event.tool === "git" || event.tool === "git_diff" || event.tool === "git_commit") {
+    const args = event.args || event.arguments || {};
+    const cmd = args.command || args.action || "";
+    toolsEl.insertAdjacentHTML("beforeend",
+      '<div style="margin:8px 0;padding:8px 12px;background:var(--bg-code);border:1px solid var(--border);border-radius:6px;font-size:11px;color:var(--text-secondary);display:flex;align-items:center;gap:6px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">\uD83D\uDD00 git: ' + escHtml(cmd) + '</div>');
   } else if (event.type === "tool_result") {
-    // Optionally render tool result outputs
-    toolsEl.insertAdjacentHTML("beforeend", 
-      '<div style="margin:0 0 12px;font-size:11px;color:#1a7f37;display:flex;align-items:center;gap:4px;"><svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor"><path d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z"/></svg> Execution complete</div>');
+    const toolName = event.tool || event.name || "";
+    const output = (event.result || event.output || event.text || "").slice(0, 500);
+    toolsEl.insertAdjacentHTML("beforeend",
+      '<div style="margin:0 0 10px;padding:8px 12px;font-size:11px;color:var(--success);background:#f0fff4;border:1px solid #b7e1c0;border-radius:6px;display:flex;align-items:flex-start;gap:6px">' +
+      '<span style="flex-shrink:0">\u2705</span><span>' + (output || "Execution complete") + '</span></div>');
   }
-  
+
   $("chatMessagesWrapper").scrollTop = $("chatMessagesWrapper").scrollHeight;
+}
+
+function addPendingTool(event, type, summary) {
+  _chatPendingTools.push({ id: Date.now() + "_" + Math.random().toString(36).slice(2, 8), event, type, summary, approved: null });
+  if (_chatMode === "plan" || _chatMode === "ask") {
+    renderPendingTools();
+  }
+}
+
+function renderPendingTools() {
+  const container = $("chatPendingTools");
+  if (!container) return;
+  let html = '<div style="margin-top:12px;padding:12px;background:var(--bg);border:1px solid #d4a72c;border-radius:8px">';
+  html += '<div style="font-size:12px;font-weight:600;color:#9a6700;margin-bottom:8px">\u23F3 Pending Tools (' + _chatPendingTools.length + ')</div>';
+  for (const t of _chatPendingTools) {
+    if (t.approved !== null) continue;
+    html += '<div style="padding:8px;border:1px solid var(--border);border-radius:6px;margin-bottom:6px;background:var(--bg-card)">';
+    html += '<div style="font-size:12px;color:var(--text);margin-bottom:6px">\uD83D\uDD27 ' + escHtml(t.type) + ': ' + escHtml(t.summary) + '</div>';
+    html += '<div style="display:flex;gap:4px">';
+    html += '<button class="btn btn-sm btn-primary" onclick="approveTool(\'' + t.id + '\',true)">Approve</button>';
+    html += '<button class="btn btn-sm" onclick="approveTool(\'' + t.id + '\',false)">Reject</button>';
+    html += '<button class="btn btn-sm" onclick="editTool(\'' + t.id + '\')">Edit</button>';
+    html += '</div></div>';
+  }
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+function approveTool(id, approved) {
+  const tool = _chatPendingTools.find(t => t.id === id);
+  if (tool) { tool.approved = approved; }
+  fetch("/api/chat/approve-tool", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ toolId: id, approved })
+  });
+  renderPendingTools();
+}
+
+function editTool(id) {
+  const tool = _chatPendingTools.find(t => t.id === id);
+  if (!tool) return;
+  const currentCmd = tool.event?.args?.command || tool.event?.arguments?.command || "";
+  openModal("Edit Command",
+    '<label>Command</label><textarea id="fEditCmd" rows="3" style="font-family:monospace;font-size:12px">' + escHtml(currentCmd) + '</textarea>',
+    () => {
+      const newCmd = $("fEditCmd").value.trim();
+      if (newCmd && tool.event.args) tool.event.args.command = newCmd;
+      if (newCmd && tool.event.arguments) tool.event.arguments.command = newCmd;
+      closeModal();
+      renderPendingTools();
+    });
+}
+
+function submitAskResponse() {
+  const input = $("askInput");
+  if (!input || !input.value.trim()) return;
+  fetch("/api/chat/approve-tool", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ toolId: "ask", approved: true, response: input.value.trim() })
+  });
+  input.disabled = true;
+  input.value = "";
 }
 
 function showChatNoServer() {
