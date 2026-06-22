@@ -440,6 +440,14 @@ const PAGE = `<!DOCTYPE html>
   .chat-header .badge:hover { background:var(--border); }
   .chat-stop-btn { padding:4px 12px; border-radius:6px; border:1px solid var(--danger); background:transparent; color:var(--danger); font-size:12px; cursor:pointer; font-weight:600; }
   .chat-stop-btn:hover { background:#ffebe9; }
+  .file-explorer { border-bottom:1px solid var(--border); background:var(--bg-card); }
+  .file-explorer-header { padding:8px 12px; font-size:12px; font-weight:600; color:var(--text-secondary); cursor:pointer; display:flex; align-items:center; gap:4px; user-select:none; }
+  .file-explorer-header:hover { background:var(--bg-code); }
+  .file-explorer-tree { padding:4px 0; max-height:200px; overflow-y:auto; font-size:12px; }
+  .file-item { padding:3px 12px 3px 20px; cursor:pointer; display:flex; align-items:center; gap:4px; color:var(--text); }
+  .file-item:hover { background:var(--bg-code); color:var(--primary); }
+  .file-item .fname { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .file-item.dir { font-weight:500; }
   @media (min-width: 768px) {
     .sidebar { transition: width .2s ease; }
     .sidebar.collapsed { width: 0 !important; overflow: hidden; border-right: none; }
@@ -616,7 +624,15 @@ const PAGE = `<!DOCTYPE html>
           <button class="icon-btn" id="chatDarkToggle" title="Toggle dark mode">🌙</button>
         </div>
         <div class="chat-layout">
-          <div class="chat-sidebar" id="chatSessionList"></div>
+          <div class="chat-sidebar" id="chatSidebar">
+            <div class="file-explorer">
+              <div class="file-explorer-header" onclick="toggleFileExplorer()">
+                <span id="feChevron">▼</span> Workspace
+              </div>
+              <div class="file-explorer-tree" id="fileTree"><div style="padding:8px 12px;font-size:11px;color:var(--text-secondary)">Loading...</div></div>
+            </div>
+            <div id="chatSessionList" style="flex:1;overflow:hidden;display:flex;flex-direction:column"></div>
+          </div>
           <div class="chat-main" id="chatMain">
             <div class="chat-msgs-wrapper" id="chatMessagesWrapper">
               <div id="chatMessages" class="chat-msgs"></div>
@@ -1410,6 +1426,7 @@ async function loadChat() {
         }
       }
     });
+    loadFileTree(".");
     if (!_chatSessionId) showChatWelcome();
   } catch {}
 }
@@ -1798,6 +1815,69 @@ function submitAskResponse() {
   });
   input.disabled = true;
   input.value = "";
+}
+
+let _fileExplorerOpen = true;
+function toggleFileExplorer() {
+  _fileExplorerOpen = !_fileExplorerOpen;
+  const tree = $("fileTree");
+  if (tree) tree.style.display = _fileExplorerOpen ? "" : "none";
+  const chevron = $("feChevron");
+  if (chevron) chevron.textContent = _fileExplorerOpen ? "\u25BC" : "\u25B6";
+}
+
+async function loadFileTree(dir) {
+  const container = $("fileTree");
+  if (!container) return;
+  container.innerHTML = '<div style="padding:8px 12px;font-size:11px;color:var(--text-secondary)">Loading...</div>';
+  try {
+    const r = await fetch("/api/files/tree?dir=" + encodeURIComponent(dir || ""));
+    const d = await r.json();
+    if (!d.ok) { container.innerHTML = '<div style="padding:8px 12px;font-size:11px;color:var(--danger)">' + escHtml(d.error) + '</div>'; return; }
+    let html = "";
+    for (const e of d.entries) {
+      const icon = e.type === "directory" ? "\uD83D\uDCC1" : "\uD83D\uDCC4";
+      const cls = e.type === "directory" ? "file-item dir" : "file-item";
+      const clickHandler = e.type === "directory"
+        ? "loadFileTree('" + escHtml(dir + "/" + e.name) + "')"
+        : "previewFile('" + escHtml(dir + "/" + e.name) + "')";
+      html += '<div class="' + cls + '" onclick="' + clickHandler + '">';
+      html += '<span class="fname">' + escHtml(e.name) + '</span></div>';
+    }
+    container.innerHTML = html;
+  } catch (e) { container.innerHTML = '<div style="padding:8px 12px;font-size:11px;color:var(--danger)">Error loading files</div>'; }
+}
+
+function previewFile(path) {
+  let panel = $("filePreview");
+  if (!panel) {
+    panel = document.createElement("div");
+    panel.id = "filePreview";
+    panel.style.cssText = "position:fixed;right:0;top:0;bottom:0;width:400px;max-width:80vw;background:var(--bg-card);border-left:1px solid var(--border);z-index:300;display:flex;flex-direction:column;box-shadow:-4px 0 12px rgba(0,0,0,0.1)";
+    document.body.appendChild(panel);
+  }
+  panel.innerHTML = '<div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-shrink:0">' +
+    '<span style="font-size:13px;font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escHtml(path) + '</span>' +
+    '<button class="icon-btn" onclick="closePreview()">' + iconX + '</button></div>' +
+    '<div style="flex:1;overflow:auto;padding:16px"><div class="loading" style="padding:0">Loading...</div></div>';
+  panel.style.display = "flex";
+
+  fetch("/api/files/read?path=" + encodeURIComponent(path)).then(r => r.json()).then(d => {
+    const contentDiv = panel.querySelector("div:last-child");
+    if (d.ok) {
+      contentDiv.innerHTML = '<pre style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:1.5;color:var(--text);overflow-x:auto;white-space:pre-wrap;word-break:break-all">' + escHtml(d.content) + '</pre>';
+    } else {
+      contentDiv.innerHTML = '<div style="color:var(--danger);font-size:13px">' + escHtml(d.error) + '</div>';
+    }
+  }).catch(() => {
+    const contentDiv = panel.querySelector("div:last-child");
+    if (contentDiv) contentDiv.innerHTML = '<div style="color:var(--danger);font-size:13px">Failed to load file</div>';
+  });
+}
+
+function closePreview() {
+  const panel = $("filePreview");
+  if (panel) panel.style.display = "none";
 }
 
 function showChatNoServer() {
