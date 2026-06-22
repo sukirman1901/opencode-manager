@@ -505,24 +505,27 @@ const PAGE = `<!DOCTYPE html>
   .chat-main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; background: #fff; }
   .chat-msgs-wrapper { flex: 1; overflow-y: auto; display: flex; flex-direction: column; align-items: center; }
   .chat-msgs { width: 100%; max-width: 800px; padding: 24px; flex: 1; display: flex; flex-direction: column; }
-  .chat-bubble { margin-bottom: 16px; display: flex; flex-direction: column; }
+  .chat-bubble { margin: 0; padding: 24px 0; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; width: 100%; box-sizing: border-box; }
   .chat-bubble.user { align-items: flex-end; }
   .chat-bubble.assistant { align-items: flex-start; }
-  .chat-bubble-label { font-size: 11px; font-weight: 600; color: #656d76; margin-bottom: 4px; padding: 0 4px; text-transform: uppercase; letter-spacing: 0.02em; }
-  .chat-bubble-inner { padding: 12px 16px; border-radius: 12px; font-size: 14px; line-height: 1.5; word-break: break-word; max-width: 85%; }
-  .chat-bubble-inner p { margin-bottom: 12px; }
+  .chat-bubble-label { font-size: 12px; font-weight: 600; color: var(--text-secondary); margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+  .chat-bubble-label svg { width: 16px; height: 16px; fill: currentColor; }
+  .chat-bubble.user .chat-bubble-inner { background: var(--primary); color: #fff; padding: 8px 16px; border-radius: 16px 16px 4px 16px; max-width: 80%; }
+  .chat-bubble.assistant .chat-bubble-inner { background: var(--bg-card); padding: 8px 16px; border-radius: 16px 16px 16px 4px; max-width: 80%; }
+  .chat-bubble-inner p { margin-bottom: 16px; }
   .chat-bubble-inner p:last-child, .chat-bubble-inner ul:last-child, .chat-bubble-inner ol:last-child { margin-bottom: 0; }
-  .chat-bubble-inner ul, .chat-bubble-inner ol { padding-left: 24px; margin-bottom: 12px; }
-  .chat-bubble-inner li { margin-bottom: 4px; }
-  .chat-bubble-inner pre { margin-bottom: 12px; }
-  .chat-bubble.user .chat-bubble-inner { background: #0969da; color: #fff; border-bottom-right-radius: 4px; }
-  .chat-bubble.assistant .chat-bubble-inner { background: #f3f4f6; color: #24292f; border-bottom-left-radius: 4px; }
-  .chat-bubble .chat-bubble-time { font-size: 10px; color: #8c959f; margin-top: 4px; padding: 0 4px; }
-  .chat-input-wrapper { border-top: 1px solid transparent; background: linear-gradient(180deg, rgba(255,255,255,0) 0%, #fff 20%); padding: 10px 0 24px; display: flex; justify-content: center; }
-  .chat-input-bar { display: flex; align-items: flex-end; gap: 8px; width: 100%; max-width: 800px; padding: 10px 12px; border: 1px solid #d0d7de; border-radius: 12px; background: #fff; box-shadow: 0 4px 12px rgba(0,0,0,0.05); transition: border-color 0.2s, box-shadow 0.2s; margin: 0 24px; }
-  .chat-input-bar:focus-within { border-color: #0969da; box-shadow: 0 4px 12px rgba(9,105,218,0.1); }
-  .chat-input-bar textarea { flex: 1; resize: none; padding: 6px; border: none; font-family: inherit; font-size: 14px; outline: none; background: transparent; max-height: 200px; }
-  .chat-input-bar button { align-self: flex-end; padding: 8px 16px; border-radius: 8px; font-weight: 600; }
+  .chat-bubble-inner ul, .chat-bubble-inner ol { padding-left: 24px; margin-bottom: 16px; }
+  .chat-bubble-inner li { margin-bottom: 6px; }
+  .chat-bubble-inner pre { margin-bottom: 16px; border-radius: 8px; border: 1px solid var(--border); }
+  .chat-bubble .chat-bubble-time { display: none; }
+  .chat-input-wrapper { border-top: 1px solid var(--border); background: var(--bg-card); padding: 16px 0; display: flex; justify-content: center; width: 100%; }
+  .chat-input-bar { display: flex; align-items: flex-end; gap: 8px; width: 100%; max-width: 800px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); box-shadow: 0 2px 6px rgba(0,0,0,0.03); transition: border-color 0.2s; margin: 0 24px; }
+  .chat-input-bar:focus-within { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }
+  .chat-input-bar textarea { flex: 1; resize: none; padding: 4px; border: none; font-family: inherit; font-size: 14px; line-height: 1.5; outline: none; background: transparent; max-height: 200px; color: var(--text); }
+  .chat-input-bar button { display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0; border-radius: 6px; font-weight: normal; background: var(--primary); color: #fff; border: none; cursor: pointer; transition: opacity 0.2s; align-self: flex-end; margin-bottom: 2px; flex-shrink: 0; }
+  .chat-input-bar button:hover { opacity: 0.9; }
+  .chat-input-bar button svg { width: 16px; height: 16px; fill: currentColor; }
+  .chat-input-bar button:disabled { background: var(--border); color: var(--text-secondary); cursor: not-allowed; opacity: 0.7; }
   .chat-welcome { text-align: center; padding: 48px 16px; color: #656d76; font-size: 14px; margin: auto; }
   .chat-loading { text-align: center; padding: 24px; color: #8c959f; font-size: 12px; margin: auto; }
   @media (max-width: 767px) {
@@ -663,7 +666,9 @@ const PAGE = `<!DOCTYPE html>
                 </div>
                 <div class="chat-input-bar" style="margin: 0; width: 100%;">
                   <textarea id="chatInput" rows="2" placeholder="Type a message..." autocomplete="off"></textarea>
-                  <button class="btn btn-primary" id="chatSendBtn">Send</button>
+                  <button id="chatSendBtn" aria-label="Send message">
+                    <svg viewBox="0 0 16 16"><path d="M1.593 2.712L14.5 8 1.593 13.288l-.86-5.03L10.5 8 .732 7.742l.86-5.03z"></path></svg>
+                  </button>
                 </div>
               </div>
             </div>
@@ -1050,7 +1055,7 @@ async function loadIntegrations() {
       
       let rhtml = '<div class="integration-list">';
       for (const repo of data.repos) {
-        rhtml += '<div class="integration-item"><div class="integration-icon" style="color:#656d76">&#x1F4D2;</div><div class="integration-info"><div class="integration-name">' + escHtml(repo.full_name) + '</div><div class="integration-desc">' + (repo.private ? "Private" : "Public") + ' &middot; Updated ' + new Date(repo.updated_at).toLocaleDateString() + '</div></div><div class="integration-action"><button class="btn btn-sm" onclick="cloneRepo(\\'' + repo.full_name + '\\', \\'' + repo.clone_url + '\\')">Clone & Work</button></div></div>';
+        rhtml += '<div class="integration-item"><div class="integration-icon" style="color:#656d76">&#x1F4D2;</div><div class="integration-info"><div class="integration-name">' + escHtml(repo.full_name) + '</div><div class="integration-desc">' + (repo.private ? "Private" : "Public") + ' &middot; Updated ' + new Date(repo.updated_at).toLocaleDateString() + '</div></div><div class="integration-action"><button class="btn btn-sm" onclick="cloneRepo(' + "'" + repo.full_name + "'" + ', ' + "'" + repo.clone_url + "'" + ')">Clone & Work</button></div></div>';
       }
       rhtml += '</div>';
       container.innerHTML = rhtml;
@@ -1501,9 +1506,8 @@ async function selectChatSession(id) {
         text = data.summary?.title || "";
       }
       html += '<div class="chat-bubble ' + role + '">';
-      html += '<div class="chat-bubble-label">' + (role === "user" ? "You" : (role === "tool" ? "Tool" : "Assistant")) + '</div>';
+      html += '<div class="chat-bubble-label">' + (role === "user" ? '<svg viewBox="0 0 16 16"><path d="M8 16A8 8 0 108 0a8 8 0 000 16zm.847-8.145a2.502 2.502 0 10-1.694 0C5.471 8.261 4 9.775 4 11.773c0 .185.122.348.3.405.086.026.177-.005.234-.078A5.49 5.49 0 018 10.5c1.332 0 2.553.473 3.466 1.6.057.073.148.104.234.078a.426.426 0 00.3-.405c0-1.998-1.47-3.512-3.153-3.918zM7.5 6.5a1.5 1.5 0 111-2.83 1.5 1.5 0 01-1 2.83z"></path></svg> You' : (role === "tool" ? '<svg viewBox="0 0 16 16"><path d="M8 0a8 8 0 100 16A8 8 0 008 0zm.5 11.5v-5h-1v5h1zm0-7v-1h-1v1h1z"></path></svg> Tool' : '<svg viewBox="0 0 16 16"><path d="M0 8a8 8 0 1116 0A8 8 0 010 8zm6.5-1.5v3.016c0 .285.342.433.55.239l2.77-2.61a.5.5 0 000-.726l-2.77-2.61c-.208-.194-.55-.046-.55.239V6.5z"></path></svg> Assistant')) + '</div>';
       html += '<div class="chat-bubble-inner">' + renderMd(text || "(no content)") + '</div>';
-      if (time) html += '<div class="chat-bubble-time">' + time + '</div>';
       html += '</div>';
     }
     $("chatMessages").innerHTML = html;
@@ -1559,7 +1563,7 @@ function renderChatRepoList() {
   html += '<div class="chat-repo-item" style="padding:6px 12px;font-size:12px;cursor:pointer;color:#24292f" onclick="selectChatRepo(null)"><em>Clear selection</em></div>';
   
   for (const r of filtered) {
-    html += '<div class="chat-repo-item" style="padding:6px 12px;font-size:12px;cursor:pointer;color:#24292f;display:flex;align-items:center;gap:6px" onclick="selectChatRepo(\\'' + r.full_name + '\\')">';
+    html += '<div class="chat-repo-item" style="padding:6px 12px;font-size:12px;cursor:pointer;color:#24292f;display:flex;align-items:center;gap:6px" onclick="selectChatRepo(' + "'" + r.full_name + "'" + ')">';
     html += '<span>&#x1F4D2;</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escHtml(r.full_name) + '</span>';
     html += '</div>';
   }
@@ -1603,13 +1607,12 @@ async function sendChatMessage(overrideText) {
   input.value = "";
   _chatLoading = true;
   $("chatSendBtn").disabled = true;
-  $("chatSendBtn").textContent = "Sending...";
 
   // Add user bubble
   $("chatMessages").insertAdjacentHTML("beforeend",
-    '<div class="chat-bubble user"><div class="chat-bubble-label">You</div><div class="chat-bubble-inner">' + escHtml(msg) + '</div><div class="chat-bubble-time">just now</div></div>');
+    '<div class="chat-bubble user"><div class="chat-bubble-label"><svg viewBox="0 0 16 16"><path d="M8 16A8 8 0 108 0a8 8 0 000 16zm.847-8.145a2.502 2.502 0 10-1.694 0C5.471 8.261 4 9.775 4 11.773c0 .185.122.348.3.405.086.026.177-.005.234-.078A5.49 5.49 0 018 10.5c1.332 0 2.553.473 3.466 1.6.057.073.148.104.234.078a.426.426 0 00.3-.405c0-1.998-1.47-3.512-3.153-3.918zM7.5 6.5a1.5 1.5 0 111-2.83 1.5 1.5 0 01-1 2.83z"></path></svg> You</div><div class="chat-bubble-inner">' + escHtml(msg) + '</div></div>');
   $("chatMessages").insertAdjacentHTML("beforeend",
-    '<div class="chat-bubble assistant" id="chatPending"><div class="chat-bubble-label">Assistant</div><div class="chat-bubble-inner" id="chatStreamingText" style="color:#8c959f">Thinking...</div><div id="chatStreamingTools" style="width:100%;margin-top:8px;"></div></div>');
+    '<div class="chat-bubble assistant" id="chatPending"><div class="chat-bubble-label"><svg viewBox="0 0 16 16"><path d="M0 8a8 8 0 1116 0A8 8 0 010 8zm6.5-1.5v3.016c0 .285.342.433.55.239l2.77-2.61a.5.5 0 000-.726l-2.77-2.61c-.208-.194-.55-.046-.55.239V6.5z"></path></svg> Assistant</div><div class="chat-bubble-inner" id="chatStreamingText" style="color:var(--text-secondary)">Thinking...</div><div id="chatStreamingTools" style="width:100%;margin-top:8px;"></div></div>');
   $("chatMessagesWrapper").scrollTop = $("chatMessagesWrapper").scrollHeight;
 
   try {
@@ -1638,7 +1641,6 @@ async function sendChatMessage(overrideText) {
       }
       _chatLoading = false;
       $("chatSendBtn").disabled = false;
-      $("chatSendBtn").textContent = "Send";
       $("chatStopBtn").style.display = "none";
       return;
     }
@@ -1710,7 +1712,6 @@ async function sendChatMessage(overrideText) {
 
   _chatLoading = false;
   $("chatSendBtn").disabled = false;
-  $("chatSendBtn").textContent = "Send";
   $("chatMessagesWrapper").scrollTop = $("chatMessagesWrapper").scrollHeight;
 }
 
@@ -1735,8 +1736,8 @@ function handleChatEvent(event) {
     const args = event.args || event.arguments || {};
     const cmd = args.command || args.CommandLine || event.command || "";
     addPendingTool(event, "run_command", cmd);
-    toolsEl.insertAdjacentHTML("beforeend",
-      '<div style="margin:8px 0;padding:12px;background:#1f2328;color:#f6f8fa;border-radius:6px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;overflow-x:auto;">$ ' + escHtml(cmd) + '</div>');
+    toolsEl.insertAdjacentHTML("beforeend", 
+      '<div style="margin:8px 0;padding:12px;background:var(--bg-code);color:var(--text);border:1px solid var(--border);border-radius:6px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;overflow-x:auto;"><span style="color:#cf222e;font-weight:600;">$</span> ' + escHtml(cmd) + '</div>');
   } else if (event.type === "tool_call:read_file" || event.type === "read_file" || event.tool === "read_file") {
     const args = event.args || event.arguments || {};
     const path = args.path || args.targetFile || args.filePath || "";
@@ -1746,8 +1747,10 @@ function handleChatEvent(event) {
     const args = event.args || event.arguments || {};
     const target = args.targetFile || args.TargetFile || args.target || "";
     addPendingTool(event, "edit_file", target);
-    toolsEl.insertAdjacentHTML("beforeend",
-      '<div style="margin:8px 0;padding:10px 12px;background:#f0f6ff;border:1px solid #cce5ff;border-radius:6px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:var(--primary);display:flex;align-items:center;gap:6px">\uD83D\uDCDD Editing ' + escHtml(target) + '</div>');
+    toolsEl.insertAdjacentHTML("beforeend", 
+      '<div style="margin:8px 0;padding:10px 12px;background:#f6f8fa;border:1px solid var(--border);border-radius:6px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:var(--text);display:flex;align-items:center;gap:6px;">' +
+      '<svg viewBox="0 0 16 16" width="14" height="14" fill="#0969da"><path d="M11.013 1.427a1.75 1.75 0 012.474 0l1.086 1.086a1.75 1.75 0 010 2.474l-8.61 8.61c-.21.21-.47.364-.756.445l-3.251.93a.75.75 0 01-.927-.928l.929-3.25a1.75 1.75 0 01.445-.758l8.61-8.61zm1.414 1.06a.25.25 0 00-.354 0L10.811 3.75l1.439 1.44 1.263-1.263a.25.25 0 000-.354l-1.086-1.086zM11.189 6.25L9.75 4.81l-6.286 6.287a.25.25 0 00-.064.108l-.558 1.953 1.953-.558a.249.249 0 00.108-.064l6.286-6.286z"/></svg> ' + 
+      '<span style="color:#656d76">Editing</span> ' + escHtml(target) + '</div>');
   } else if (event.type === "tool_call:search" || event.type === "search" || event.tool === "search" || event.tool === "grep") {
     const args = event.args || event.arguments || {};
     const query = args.query || args.pattern || "";
@@ -1810,9 +1813,9 @@ function renderPendingTools() {
     html += '<div style="padding:8px;border:1px solid var(--border);border-radius:6px;margin-bottom:6px;background:var(--bg-card)">';
     html += '<div style="font-size:12px;color:var(--text);margin-bottom:6px">\uD83D\uDD27 ' + escHtml(t.type) + ': ' + escHtml(t.summary) + '</div>';
     html += '<div style="display:flex;gap:4px">';
-    html += '<button class="btn btn-sm btn-primary" onclick="approveTool(\'' + t.id + '\',true)">Approve</button>';
-    html += '<button class="btn btn-sm" onclick="approveTool(\'' + t.id + '\',false)">Reject</button>';
-    html += '<button class="btn btn-sm" onclick="editTool(\'' + t.id + '\')">Edit</button>';
+    html += '<button class="btn btn-sm btn-primary" onclick="approveTool(' + "'" + t.id + "'" + ',true)">Approve</button>';
+    html += '<button class="btn btn-sm" onclick="approveTool(' + "'" + t.id + "'" + ',false)">Reject</button>';
+    html += '<button class="btn btn-sm" onclick="editTool(' + "'" + t.id + "'" + ')">Edit</button>';
     html += '</div></div>';
   }
   html += '</div>';
@@ -1932,7 +1935,7 @@ function loadContextDrawer() {
   } else {
     let html = "";
     for (const f of _chatContextFiles) {
-      html += '<div class="context-file-row"><span>📄</span><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:monospace;font-size:11px">' + escHtml(f) + '</span><span class="remove-btn" onclick="removeContextFile(\'' + escHtml(f) + '\')">' + iconX + '</span></div>';
+      html += '<div class="context-file-row"><span>📄</span><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:monospace;font-size:11px">' + escHtml(f) + '</span><span class="remove-btn" onclick="removeContextFile(' + "'" + escHtml(f) + "'" + ')">' + iconX + '</span></div>';
     }
     list.innerHTML = html;
   }
@@ -1943,7 +1946,7 @@ function loadContextDrawer() {
     const gi = $("ctxGitInfo");
     if (!gi) return;
     if (d.ok) {
-      const count = d.output.trim() ? d.output.trim().split("\n").filter(Boolean).length : 0;
+      const count = d.output.trim() ? d.output.trim().split("\\n").filter(Boolean).length : 0;
       gi.innerHTML = '<div style="font-size:12px;color:var(--text)"><span style="font-family:monospace">main</span><br>' + (count > 0 ? '<span style="color:var(--danger)">● ' + count + ' uncommitted</span>' : '<span style="color:var(--success)">✔ Clean</span>') + '</div>';
     } else {
       gi.innerHTML = '<div style="font-size:12px;color:var(--text-secondary)">Not a git repo</div>';
@@ -1965,7 +1968,7 @@ function removeContextFile(path) {
 }
 
 function copyContext() {
-  const text = _chatContextFiles.join("\n");
+  const text = _chatContextFiles.join("\\n");
   navigator.clipboard.writeText(text).then(function() { showToast("Context copied!"); }).catch(function() { showToast("Failed to copy", true); });
 }
 
@@ -2556,14 +2559,20 @@ function createServer(opts?: { port?: number }) {
             env: { ...process.env, NO_COLOR: "1" },
             stdio: ["ignore", "pipe", "pipe"],
           });
-          // Read port from output
+          // Read port from output (may span multiple chunks)
           const reader = proc.stdout?.getReader();
           let port = 0;
           if (reader) {
-            const { value } = await reader.read();
-            const text = new TextDecoder().decode(value);
-            const m = text.match(/:(\d+)/);
-            if (m) port = parseInt(m[1]);
+            const decoder = new TextDecoder();
+            let buf = "";
+            const deadline = Date.now() + 5000;
+            while (Date.now() < deadline) {
+              const { done, value } = await reader.read();
+              if (value) buf += decoder.decode(value, { stream: true });
+              const m = buf.match(/:(\d+)/);
+              if (m) { port = parseInt(m[1]); break; }
+              if (done) break;
+            }
           }
           // Try SDK connection
           if (port) {
@@ -2581,7 +2590,7 @@ function createServer(opts?: { port?: number }) {
         }
       }
       if (url.pathname === "/api/chat" && req.method === "POST") {
-        const { sessionId, message, context } = await req.json();
+        const { sessionId, message, context, mode } = await req.json();
         if (!message) return json({ ok: false, error: "message required" }, 400);
         if (!_sdkClient) return json({ ok: false, error: "OpenCode server not available. Run 'opencode serve' in another terminal, or use this UI as an OpenCode plugin." }, 400);
 
@@ -2591,13 +2600,13 @@ function createServer(opts?: { port?: number }) {
             const created = await _sdkClient.session.create({ body: { title: message.slice(0, 80) } });
             sid = (created as any)?.data?.id || (created as any)?.id;
           }
-          
+
           const cfg = await readConfig();
           const activeModel = cfg.current;
-          
+
           const parts = [];
           let targetDir: string | undefined = undefined;
-          
+
           if (context) {
             parts.push({ type: "text", text: context + "\n\n" });
             const match = context.match(/GitHub Repository Context: (.*)/);
@@ -2608,7 +2617,7 @@ function createServer(opts?: { port?: number }) {
             }
           }
           parts.push({ type: "text", text: message });
-          
+
           let modelObj = undefined;
           if (activeModel) {
             const splitIdx = activeModel.indexOf("/");
@@ -2618,34 +2627,221 @@ function createServer(opts?: { port?: number }) {
           }
 
           let baseUrl = process.env.OPENCODE_SERVER || "http://127.0.0.1:17497";
-          if (_sdkClient && _sdkClient.client && typeof _sdkClient.client.getConfig === "function") {
-            const sdkConfig = _sdkClient.client.getConfig();
+          let authHeaders: Record<string,string> = {};
+          let sdkFetch = fetch;
+          const _sdkInnerClient = _sdkClient?._client || _sdkClient?.client;
+          if (_sdkInnerClient && typeof _sdkInnerClient.getConfig === "function") {
+            const sdkConfig = _sdkInnerClient.getConfig();
             if (sdkConfig && sdkConfig.baseUrl) {
               baseUrl = sdkConfig.baseUrl;
             }
+            if (sdkConfig && sdkConfig.headers) {
+              authHeaders = sdkConfig.headers;
+            }
+            if (sdkConfig && sdkConfig.fetch) {
+              sdkFetch = sdkConfig.fetch;
+            }
           }
-          console.log("[DEBUG] /api/chat baseUrl:", baseUrl);
-          const query = targetDir ? `?directory=${encodeURIComponent(targetDir)}&stream=true` : `?stream=true`;
           
-          const upstream = await fetch(`${baseUrl}/session/${sid}/prompt${query}`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Accept": "text/event-stream"
-            },
-            body: JSON.stringify({
-              parts,
-              model: modelObj,
-              stream: true
-            })
+          const dirQuery = targetDir ? `?directory=${encodeURIComponent(targetDir)}` : "";
+          
+          // Connect to event stream first so we get real-time updates
+          let eventRes: Response | null = null;
+          if (_sdkInnerClient && typeof _sdkInnerClient.get === "function") {
+            try {
+              const result = await _sdkInnerClient.get({
+                url: "/global/event",
+                headers: { "Accept": "text/event-stream" },
+                parseAs: "stream",
+              });
+              if (result && result.response && result.response.ok) {
+                eventRes = result.response;
+              }
+            } catch (e: any) {
+              eventRes = null;
+            }
+          } else {
+            try {
+              eventRes = await sdkFetch(`${baseUrl}/event`, {
+                headers: { "Accept": "text/event-stream", ...authHeaders }
+              });
+              if (!eventRes.ok) {
+                eventRes = null;
+              }
+            } catch (e: any) {
+              eventRes = null;
+            }
+          }
+
+          // Build readable stream that forwards OpenCode SSE events to the frontend
+          const sseStream = new ReadableStream({
+            async start(controller) {
+              const encoder = new TextEncoder();
+              
+              const eventDecoder = new TextDecoder();
+              let eventBuf = "";
+              let closed = false;
+
+              const reasoningPartIDs = new Set<string>();
+
+              async function forwardEvents() {
+                if (!eventRes) {
+                  return;
+                }
+                const eventReader = eventRes.body!.getReader();
+                try {
+                  while (true) {
+                    const { done, value } = await eventReader.read();
+                    if (done) break;
+                    eventBuf += eventDecoder.decode(value, { stream: true });
+                    const evLines = eventBuf.split("\n");
+                    eventBuf = evLines.pop() || "";
+                    for (const el of evLines) {
+                      if (el.startsWith("data: ")) {
+                        const ds = el.slice(6).trim();
+                        try {
+                          const evt = JSON.parse(ds);
+                          const props = evt.properties || {};
+                          const evtSid = props.sessionID || evt.sessionID || props.part?.sessionID;
+                          if (evtSid === sid) {
+                            if (evt.type === "message.part.updated" && props.part?.type === "reasoning") {
+                              if (props.part.id) reasoningPartIDs.add(props.part.id);
+                              if (props.part.text) {
+                                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "think", thought: props.part.text })}\n\n`));
+                              }
+                            } else if (evt.type === "message.part.updated" && props.part?.type === "text") {
+                              const text = props.delta || props.part.text;
+                              if (text) {
+                                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "text", delta: text })}\n\n`));
+                              }
+                            } else if (evt.type === "message.part.delta" && props.field === "text") {
+                              const isReasoning = reasoningPartIDs.has(props.partID);
+                              if (props.delta) {
+                                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: isReasoning ? "think" : "text", delta: props.delta })}\n\n`));
+                              }
+                            } else if (evt.type === "session.idle" || evt.type === "session.error") {
+                              closed = true;
+                              controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+                              controller.close();
+                              return;
+                            }
+                          }
+                        } catch {}
+                      }
+                    }
+                  }
+                } catch {}
+              }
+
+              // Start forwarding events
+              const evtPromise = forwardEvents();
+
+              // Send the message (blocks until done)
+              const msgBody: any = { parts, model: modelObj };
+              
+              let msgRes: Response | null = null;
+              let msgData: any = null;
+              
+              if (_sdkInnerClient && typeof _sdkInnerClient.post === "function") {
+                try {
+                  const result = await _sdkInnerClient.post({
+                    url: "/session/{id}/message",
+                    path: { id: sid },
+                    query: targetDir ? { directory: targetDir } : undefined,
+                    body: msgBody,
+                    headers: { "Content-Type": "application/json", "Accept": "application/json" },
+                  });
+                  if (result && result.response) {
+                    msgRes = result.response;
+                    msgData = result.data;
+                  }
+                } catch (e: any) {}
+              }
+              
+              if (!msgRes) {
+                msgRes = await sdkFetch(`${baseUrl}/session/${sid}/message${dirQuery}`, {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                    ...authHeaders
+                  },
+                  body: JSON.stringify(msgBody)
+                });
+              }
+
+              if (!msgRes.ok) {
+                let errText = "OpenCode request failed";
+                try {
+                  const ed = msgData || await msgRes.json();
+                  errText = ed.message || ed.error || errText;
+                } catch {}
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "error", text: errText })}\n\n`));
+                controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+                controller.close();
+                return;
+              }
+
+              // Parse response if not already parsed
+              if (!msgData && msgRes.ok) {
+                try { msgData = await msgRes.json(); } catch {}
+              }
+
+              // Fallback: if event stream didn't deliver events, parse response data
+              if (!closed && msgData) {
+                if (typeof msgData === "string" && msgData.includes("data: ")) {
+                  // Parse SSE text from synchronous POST response
+                  const sseLines = msgData.split("\n");
+                  for (const line of sseLines) {
+                    if (line.startsWith("data: ")) {
+                      const ds = line.slice(6).trim();
+                      if (ds === "[DONE]") { closed = true; break; }
+                      try {
+                        const evt = JSON.parse(ds);
+                        const props = evt.properties || {};
+                        if (evt.type === "text" && evt.delta) {
+                          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "text", delta: evt.delta })}\n\n`));
+                        } else if (evt.type === "think" && evt.thought) {
+                          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "think", thought: evt.thought })}\n\n`));
+                        } else if (evt.type === "message.part.updated" && props.part?.type === "text") {
+                          const text = props.delta || props.part.text;
+                          if (text) controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "text", delta: text })}\n\n`));
+                        } else if (evt.type === "message.part.updated" && props.part?.type === "reasoning") {
+                          if (props.part.text) controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "think", thought: props.part.text })}\n\n`));
+                        } else if (evt.type === "message.part.delta" && props.field === "text" && props.delta) {
+                          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "text", delta: props.delta })}\n\n`));
+                        } else if (evt.type === "session.idle" || evt.type === "session.error") {
+                          closed = true; break;
+                        }
+                      } catch {}
+                    }
+                  }
+                } else if (msgData.parts) {
+                  // Parts-based fallback (JSON response)
+                  for (const part of msgData.parts) {
+                    if (part.type === "text" && part.text) {
+                      controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "text", delta: part.text })}\n\n`));
+                    } else if (part.type === "reasoning" && part.text) {
+                      controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "think", thought: part.text })}\n\n`));
+                    } else if (part.type === "tool" && part.name) {
+                      controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "tool", name: part.name, input: part.input, result: part.result })}\n\n`));
+                    }
+                  }
+                }
+              }
+
+              if (!closed) {
+                controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+                controller.close();
+              }
+            }
           });
 
-          return new Response(upstream.body, {
-            status: upstream.status,
+          return new Response(sseStream, {
+            status: 200,
             headers: {
               "Content-Type": "text/event-stream",
               "Cache-Control": "no-cache",
-              "Connection": "keep-alive",
               "Access-Control-Allow-Origin": "*",
               "X-Session-Id": sid
             }

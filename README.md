@@ -72,3 +72,7 @@ For the chat feature, it uses the OpenCode SDK client to create sessions and sen
 ## License
 
 MIT
+
+## Credits
+
+Created by **sukirman**
