@@ -2403,6 +2403,66 @@ function createServer(opts?: { port?: number }) {
         return json({ ok: false, error: "method not allowed" }, 405);
       }
 
+      // --- Chat agent endpoints ---
+
+      if (url.pathname === "/api/chat/stop" && req.method === "POST") {
+        return json({ ok: true });
+      }
+
+      if (url.pathname === "/api/chat/approve-tool" && req.method === "POST") {
+        const { toolId, approved, modifiedArgs } = await req.json();
+        return json({ ok: true, toolId, approved });
+      }
+
+      // --- File endpoints ---
+
+      if (url.pathname === "/api/files/tree" && req.method === "GET") {
+        const dir = url.searchParams.get("dir") || homedir();
+        try {
+          const { readdirSync, statSync } = await import("fs");
+          const { join } = await import("path");
+          const entries = readdirSync(dir);
+          const tree = entries.filter((e: string) => !e.startsWith(".")).map((e: string) => {
+            const full = join(dir, e);
+            try {
+              const s = statSync(full);
+              return { name: e, type: s.isDirectory() ? "directory" : "file", size: s.size };
+            } catch { return { name: e, type: "unknown" }; }
+          });
+          return json({ ok: true, path: dir, entries: tree });
+        } catch (e: any) { return json({ ok: false, error: e.message }, 500); }
+      }
+
+      if (url.pathname === "/api/files/read" && req.method === "GET") {
+        const path = url.searchParams.get("path");
+        if (!path) return json({ ok: false, error: "path required" }, 400);
+        try {
+          const { readFileSync, existsSync, statSync } = await import("fs");
+          if (!existsSync(path)) return json({ ok: false, error: "file not found" }, 404);
+          const s = statSync(path);
+          if (s.size > 1024 * 100) return json({ ok: false, error: "file too large (>100KB)" }, 413);
+          const content = readFileSync(path, "utf-8");
+          return json({ ok: true, path, content });
+        } catch (e: any) { return json({ ok: false, error: e.message }, 500); }
+      }
+
+      // --- Git endpoints ---
+
+      if (url.pathname.startsWith("/api/git/") && req.method === "GET") {
+        const action = url.pathname.replace("/api/git/", "");
+        const dir = url.searchParams.get("dir") || process.cwd();
+        if (!["status", "diff", "log"].includes(action)) return json({ ok: false, error: "invalid action" }, 400);
+        try {
+          const { execSync } = await import("child_process");
+          let cmd = "";
+          if (action === "status") cmd = "git status --short";
+          else if (action === "diff") cmd = "git diff --stat";
+          else if (action === "log") cmd = "git log --oneline -10";
+          const output = execSync(cmd, { cwd: dir, encoding: "utf-8", timeout: 10000 });
+          return json({ ok: true, action, output });
+        } catch (e: any) { return json({ ok: false, error: e.message }, 500); }
+      }
+
       return json({ error: "not found" }, 404);
     },
   });
