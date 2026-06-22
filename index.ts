@@ -448,6 +448,16 @@ const PAGE = `<!DOCTYPE html>
   .file-item:hover { background:var(--bg-code); color:var(--primary); }
   .file-item .fname { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .file-item.dir { font-weight:500; }
+  .context-drawer { position:fixed; right:0; top:0; bottom:0; width:320px; max-width:85vw; background:var(--bg-card); border-left:1px solid var(--border); z-index:250; display:none; flex-direction:column; box-shadow:-4px 0 12px rgba(0,0,0,0.1); }
+  .context-drawer.open { display:flex; }
+  .context-drawer-header { padding:12px 16px; border-bottom:1px solid var(--border); font-size:13px; font-weight:600; display:flex; align-items:center; gap:8px; flex-shrink:0; }
+  .context-drawer-body { flex:1; overflow-y:auto; padding:12px 16px; }
+  .context-section { margin-bottom:16px; }
+  .context-section-title { font-size:11px; font-weight:600; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:8px; }
+  .context-file-row { display:flex; align-items:center; gap:6px; padding:6px 8px; border-radius:4px; font-size:12px; cursor:pointer; }
+  .context-file-row:hover { background:var(--bg-code); }
+  .context-file-row .remove-btn { margin-left:auto; color:var(--danger); cursor:pointer; opacity:0; }
+  .context-file-row:hover .remove-btn { opacity:1; }
   @media (min-width: 768px) {
     .sidebar { transition: width .2s ease; }
     .sidebar.collapsed { width: 0 !important; overflow: hidden; border-right: none; }
@@ -698,6 +708,28 @@ const PAGE = `<!DOCTYPE html>
     </div>
   </div>
 
+<div class="context-drawer" id="contextDrawer">
+  <div class="context-drawer-header">
+    <span>📎 Context</span>
+    <button class="icon-btn" onclick="closeContextDrawer()">✕</button>
+  </div>
+  <div class="context-drawer-body">
+    <div class="context-section">
+      <div class="context-section-title">Files in Context (<span id="ctxFileCount">0</span>)</div>
+      <div id="ctxFileList"><div style="font-size:12px;color:var(--text-secondary)">No files added.</div></div>
+      <button class="btn btn-sm" style="margin-top:8px;width:100%" onclick="addContextFile()">+ Add file</button>
+      <button class="btn btn-sm" style="margin-top:4px;width:100%" onclick="copyContext()">📋 Copy context</button>
+    </div>
+    <div class="context-section">
+      <div class="context-section-title">🔀 Git</div>
+      <div id="ctxGitInfo"><div style="font-size:12px;color:var(--text-secondary)">Loading...</div></div>
+    </div>
+    <div class="context-section">
+      <div class="context-section-title">💰 Usage</div>
+      <div id="ctxUsage"><div style="font-size:12px;color:var(--text-secondary)">No data yet.</div></div>
+    </div>
+  </div>
+</div>
 <div class="toast" id="toast"></div>
 <div class="modal-overlay" id="modalOverlay">
   <div class="modal">
@@ -1560,9 +1592,7 @@ document.addEventListener("DOMContentLoaded", () => {
     document.body.classList.toggle("dark", _chatDarkMode);
     $("chatDarkToggle").textContent = _chatDarkMode ? "☀️" : "🌙";
   });
-  $("chatContextBadge")?.addEventListener("click", () => {
-    // Will be wired to context drawer in Task 6
-  });
+  $("chatContextBadge")?.addEventListener("click", openContextDrawer);
 });
 
 let _currentStreamText = "";
@@ -1878,6 +1908,57 @@ function previewFile(path) {
 function closePreview() {
   const panel = $("filePreview");
   if (panel) panel.style.display = "none";
+}
+
+function openContextDrawer() {
+  $("contextDrawer").classList.add("open");
+  loadContextDrawer();
+}
+function closeContextDrawer() { $("contextDrawer").classList.remove("open"); }
+
+function loadContextDrawer() {
+  const list = $("ctxFileList");
+  if (!list) return;
+  if (_chatContextFiles.length === 0) {
+    list.innerHTML = '<div style="font-size:12px;color:var(--text-secondary)">No files added.</div>';
+  } else {
+    let html = "";
+    for (const f of _chatContextFiles) {
+      html += '<div class="context-file-row"><span>📄</span><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:monospace;font-size:11px">' + escHtml(f) + '</span><span class="remove-btn" onclick="removeContextFile(\'' + escHtml(f) + '\')">' + iconX + '</span></div>';
+    }
+    list.innerHTML = html;
+  }
+  $("ctxFileCount").textContent = _chatContextFiles.length;
+  
+  // Git info
+  fetch("/api/git/status").then(r => r.json()).then(d => {
+    const gi = $("ctxGitInfo");
+    if (!gi) return;
+    if (d.ok) {
+      const count = d.output.trim() ? d.output.trim().split("\n").filter(Boolean).length : 0;
+      gi.innerHTML = '<div style="font-size:12px;color:var(--text)"><span style="font-family:monospace">main</span><br>' + (count > 0 ? '<span style="color:var(--danger)">● ' + count + ' uncommitted</span>' : '<span style="color:var(--success)">✔ Clean</span>') + '</div>';
+    } else {
+      gi.innerHTML = '<div style="font-size:12px;color:var(--text-secondary)">Not a git repo</div>';
+    }
+  }).catch(() => { const gi = $("ctxGitInfo"); if (gi) gi.innerHTML = '<div style="font-size:12px;color:var(--text-secondary)">Not a git repo</div>'; });
+}
+
+function addContextFile() {
+  const path = prompt("Enter file path:");
+  if (path && path.trim()) {
+    _chatContextFiles.push(path.trim());
+    loadContextDrawer();
+  }
+}
+
+function removeContextFile(path) {
+  _chatContextFiles = _chatContextFiles.filter(function(f) { return f !== path; });
+  loadContextDrawer();
+}
+
+function copyContext() {
+  const text = _chatContextFiles.join("\n");
+  navigator.clipboard.writeText(text).then(function() { showToast("Context copied!"); }).catch(function() { showToast("Failed to copy", true); });
 }
 
 function showChatNoServer() {
