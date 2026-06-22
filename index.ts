@@ -3,6 +3,7 @@ import { readFileSync, writeFileSync, existsSync } from "fs";
 import { homedir } from "os";
 import { Database } from "bun:sqlite";
 import { join } from "path";
+import { execSync } from "child_process";
 
 const PORT = parseInt(process.env.PORT || "2084");
 
@@ -19,6 +20,7 @@ function findPaths() {
     join(home, ".config/opencode/config.json"),
     join(home, ".opencode/opencode.json"),
     join(home, ".opencode/config.json"),
+    join(home, ".config/opencode/manager.json"),
     join(home, ".config/opencode/opencode.jsonc"),
   ].filter(Boolean) as string[];
 
@@ -154,9 +156,10 @@ async function readConfig() {
         }
       }
       if (!currentModel && raw.model) currentModel = raw.model;
-      // Merge plugins, agents, etc.
+      // Merge plugins, agents, integrations etc.
       if (raw.plugin || raw.plugins) merged.plugins = [...new Set([...(merged.plugins || []), ...(raw.plugin || []), ...(raw.plugins || [])])];
       if (raw.agent || raw.agents) merged.agents = { ...(merged.agents || {}), ...(raw.agent || {}), ...(raw.agents || {}) };
+      if (raw.integrations) merged.integrations = { ...(merged.integrations || {}), ...raw.integrations };
     } catch {}
   }
 
@@ -246,7 +249,42 @@ async function writeConfig(updater: (cfg: any) => any, targetProvider?: string, 
     }
   }
   const raw = JSON.parse(readFileSync(targetFile, "utf-8"));
-  const updated = updater(raw);
+  let updated = updater(raw);
+  
+  // Clean up opencode.json by fixing plural keys
+  if (updated.plugins) {
+    if (!updated.plugin) updated.plugin = [];
+    updated.plugin = [...new Set([...updated.plugin, ...updated.plugins])];
+    delete updated.plugins;
+  }
+  if (updated.agents) {
+    updated.agent = { ...(updated.agent || {}), ...updated.agents };
+    delete updated.agents;
+  }
+  
+  // Clean up opencode.json by moving opencode-manager specific keys to manager.json
+  const managerKeys = ["integrations"];
+  let hasManagerKeys = false;
+  let managerData: any = {};
+  const managerFile = join(homedir(), ".config/opencode/manager.json");
+  
+  if (existsSync(managerFile)) {
+    try { managerData = JSON.parse(readFileSync(managerFile, "utf-8")); } catch {}
+  }
+  
+  for (const k of managerKeys) {
+    if (updated[k] !== undefined) {
+      managerData[k] = updated[k];
+      delete updated[k];
+      hasManagerKeys = true;
+    }
+  }
+  
+  if (hasManagerKeys) {
+    if (!existsSync(join(homedir(), ".config/opencode"))) Bun.spawnSync(["mkdir", "-p", join(homedir(), ".config/opencode")]);
+    writeFileSync(managerFile, JSON.stringify(managerData, null, 2));
+  }
+
   writeFileSync(targetFile, JSON.stringify(updated, null, 2));
   _configCache = null;
 }
@@ -276,8 +314,8 @@ const PAGE = `<!DOCTYPE html>
 <title>OpenCode Manager</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; background: #f5f6f8; color: #24292f; height: 100vh; overflow: hidden; -webkit-font-smoothing: antialiased; }
-  .layout { display: flex; height: 100vh; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; background: var(--bg); color: var(--text); height: 100vh; overflow: hidden; -webkit-font-smoothing: antialiased; }
+  .layout { display: flex; height: 100vh; background: var(--bg); }
   .sidebar { width: 220px; background: #fff; border-right: 1px solid #d0d7de; display: flex; flex-direction: column; flex-shrink: 0; }
   .sidebar-brand { height: 56px; padding: 0 20px; font-size: 15px; font-weight: 600; color: #1f2328; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid #d0d7de; cursor: pointer; flex-shrink: 0; }
   .sidebar-brand svg { width: 18px; height: 18px; color: #656d76; }
@@ -348,12 +386,28 @@ const PAGE = `<!DOCTYPE html>
   .modal { background: #fff; border: 1px solid #d0d7de; border-radius: 12px; padding: 28px; width: 420px; max-width: 92vw; box-shadow: 0 8px 32px rgba(0,0,0,.12); }
   .modal-title { font-size: 16px; font-weight: 600; color: #1f2328; margin-bottom: 20px; }
   .modal-body label { display: block; font-size: 12px; font-weight: 500; color: #656d76; margin-bottom: 4px; text-transform: uppercase; letter-spacing: .04em; }
+  .integration-section { margin-bottom: 24px; }
+  .integration-section-title { font-size: 13px; font-weight: 500; color: #656d76; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.02em; }
+  .integration-list { background: #fff; border: 1px solid #d0d7de; border-radius: 8px; overflow: hidden; }
+  .integration-item { display: flex; align-items: center; gap: 16px; padding: 16px; border-bottom: 1px solid #d0d7de; }
+  .integration-item:last-child { border-bottom: none; }
+  .integration-icon { width: 32px; height: 32px; border-radius: 6px; background: #f6f8fa; display: flex; align-items: center; justify-content: center; font-size: 18px; color: #24292f; }
+  .integration-info { flex: 1; }
+  .integration-name { font-size: 14px; font-weight: 600; color: #24292f; }
+  .integration-desc { font-size: 12px; color: #656d76; margin-top: 2px; }
   .modal-body input, .modal-body select, .modal-body textarea { width: 100%; padding: 8px 12px; background: #fff; border: 1px solid #d0d7de; border-radius: 6px; color: #24292f; font-family: inherit; font-size: 13px; margin-bottom: 14px; outline: none; transition: border-color .1s; }
   .modal-body input:focus, .modal-body select:focus, .modal-body textarea:focus { border-color: #0969da; box-shadow: 0 0 0 2px rgba(9,105,218,.15); }
   .modal-body select { cursor: pointer; appearance: none; -webkit-appearance: none; padding-right: 32px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23656d76' d='M6 8L1 3h10z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; background-size: 12px; }
   .modal-body select:hover { border-color: #8c959f; }
   .modal-body input[readonly] { opacity: .5; cursor: not-allowed; }
   .modal-buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+  /* Device flow modal */
+  .df-box { background: #f6f8fa; border: 1px solid #d0d7de; border-radius: 8px; padding: 16px; margin-bottom: 16px; text-align: center; }
+  .df-label { font-size: 11px; font-weight: 600; color: #656d76; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .df-value { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; font-size: 18px; font-weight: 600; color: #24292f; letter-spacing: 0.1em; display: flex; align-items: center; justify-content: center; gap: 12px; }
+  .df-url { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; font-size: 13px; color: #24292f; display: flex; align-items: center; justify-content: center; gap: 8px; }
+  .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid rgba(9,105,218,0.2); border-radius: 50%; border-top-color: #0969da; animation: spin 1s linear infinite; margin-right: 8px; vertical-align: middle; }
+  @keyframes spin { to { transform: rotate(360deg); } }
   .usage-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin-bottom: 20px; }
   .usage-card { background: #fff; border: 1px solid #d0d7de; border-radius: 8px; padding: 16px; }
   .usage-card-label { font-size: 11px; color: #656d76; text-transform: uppercase; letter-spacing: .05em; }
@@ -451,6 +505,8 @@ const PAGE = `<!DOCTYPE html>
     .chat-sidebar { display: none; }
     .chat-bubble { max-width: 95%; }
   }
+  :root { --bg: #f5f6f8; --bg-card: #fff; --text: #24292f; --text-secondary: #656d76; --border: #d0d7de; --primary: #0969da; --success: #1a7f37; --danger: #cf222e; --bg-code: #f3f4f6; }
+  body.dark { --bg: #0d1117; --bg-card: #161b22; --text: #e6edf3; --text-secondary: #8b949e; --border: #30363d; --primary: #58a6ff; --success: #3fb950; --danger: #f85149; --bg-code: #1c2128; }
 </style>
 </head>
 <body>
@@ -477,6 +533,10 @@ const PAGE = `<!DOCTYPE html>
       <div class="sidebar-item" data-tab="sessions" onclick="switchTab('sessions')">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="6"/><path d="M8 4.5V8l2.5 1.5"/></svg>
         Sessions
+      </div>
+      <div class="sidebar-item" data-tab="integrations" onclick="switchTab('integrations')">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M12 8a3 3 0 0 0-2.83-2H6.83A3 3 0 1 0 4 8h2.17A3 3 0 0 0 9 10h2.17A3 3 0 0 0 12 8Z"/></svg>
+        Integrations
       </div>
       <div class="sidebar-item" data-tab="chat" onclick="switchTab('chat')">
         <svg viewBox="0 0 16 16" fill="currentColor"><path d="M2 2h12v9H5.5L2 14V2z"/></svg>
@@ -520,6 +580,15 @@ const PAGE = `<!DOCTYPE html>
         </div>
         <div id="pluginsContent"><div class="loading">Loading...</div></div>
       </div>
+      <div class="tab-content" id="tabIntegrations">
+        <div style="max-width:800px;margin:0 auto">
+          <div style="margin-bottom:32px">
+            <h2 style="font-size:20px;font-weight:600;color:#1f2328;margin-bottom:8px">Integrations</h2>
+            <p style="color:#656d76;font-size:14px">Connect external tools to extend your workspace.</p>
+          </div>
+          <div id="integrationsContent"><div class="loading">Loading...</div></div>
+        </div>
+      </div>
       <div class="tab-content" id="tabSessions">
         <div id="sessionsList"></div>
         <div id="sessionDetail" style="display:none"></div>
@@ -531,10 +600,23 @@ const PAGE = `<!DOCTYPE html>
             <div class="chat-msgs-wrapper" id="chatMessagesWrapper">
               <div id="chatMessages" class="chat-msgs"></div>
             </div>
-            <div class="chat-input-wrapper">
-              <div class="chat-input-bar">
-                <textarea id="chatInput" rows="2" placeholder="Type a message..." autocomplete="off"></textarea>
-                <button class="btn btn-primary" id="chatSendBtn">Send</button>
+            <div class="chat-input-wrapper" style="flex-direction: column; align-items: center;">
+              <div style="width: 100%; max-width: 800px; padding: 0 24px; display: flex; flex-direction: column; align-items: flex-start;">
+                <div id="chatRepoDropdown" style="margin-bottom:4px;position:relative;display:inline-block">
+                  <button class="btn btn-sm" id="chatRepoSelectBtn" style="background:transparent;border:none;color:#656d76;padding:4px 8px;font-size:12px;cursor:pointer;display:flex;align-items:center;gap:4px;border-radius:6px">
+                    Select repository <span style="font-size:10px">&#x25BC;</span>
+                  </button>
+                  <div id="chatRepoMenu" style="display:none;position:absolute;bottom:100%;left:0;margin-bottom:4px;background:#fff;border:1px solid #d0d7de;border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,0.1);width:260px;max-height:300px;overflow-y:auto;z-index:50">
+                    <div style="padding:8px;border-bottom:1px solid #d0d7de">
+                      <input type="text" id="chatRepoSearch" placeholder="Search repositories..." style="width:100%;padding:4px 8px;border:1px solid #d0d7de;border-radius:4px;font-size:12px;outline:none" autocomplete="off">
+                    </div>
+                    <div id="chatRepoList" style="padding:4px 0"></div>
+                  </div>
+                </div>
+                <div class="chat-input-bar" style="margin: 0; width: 100%;">
+                  <textarea id="chatInput" rows="2" placeholder="Type a message..." autocomplete="off"></textarea>
+                  <button class="btn btn-primary" id="chatSendBtn">Send</button>
+                </div>
               </div>
             </div>
           </div>
@@ -543,6 +625,41 @@ const PAGE = `<!DOCTYPE html>
     </div>
   </div>
 </div>
+  <!-- Device Flow Modal -->
+  <div class="modal-overlay" id="deviceFlowModalOverlay">
+    <div class="modal" style="text-align:center;width:480px">
+      <div style="display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:12px">
+        <span style="font-size:24px">&#x1F431;</span>
+        <h2 style="font-size:18px;font-weight:600;margin:0">Connect GitHub</h2>
+      </div>
+      <p style="font-size:13px;color:#656d76;margin-bottom:24px">Visit the login URL below and authorize:</p>
+      
+      <div class="df-box">
+        <div class="df-label">Login URL</div>
+        <div class="df-url">
+          <span id="dfUrlTxt">https://github.com/login/device</span>
+          <button class="icon-btn" onclick="copyText('https://github.com/login/device')" title="Copy URL"><svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z"></path><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z"></path></svg></button>
+          <button class="btn btn-sm" onclick="window.open('https://github.com/login/device', '_blank')">Open &#x2197;</button>
+        </div>
+      </div>
+      
+      <div class="df-box" style="background:#fff4eb;border-color:#ffd8b3">
+        <div class="df-label" style="color:#d95b00">Your Code</div>
+        <div class="df-value" style="color:#d95b00">
+          <span id="dfCodeTxt">ABCD-1234</span>
+          <button class="icon-btn" style="color:#d95b00" onclick="copyText(document.getElementById('dfCodeTxt').textContent)" title="Copy Code"><svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z"></path><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z"></path></svg></button>
+        </div>
+      </div>
+      
+      <div style="margin-top:24px;font-size:13px;color:#656d76">
+        <span class="spinner"></span> Waiting for authorization...
+      </div>
+      <div style="margin-top:20px">
+        <button class="btn" onclick="cancelDeviceFlow()">Cancel</button>
+      </div>
+    </div>
+  </div>
+
 <div class="toast" id="toast"></div>
 <div class="modal-overlay" id="modalOverlay">
   <div class="modal">
@@ -561,6 +678,11 @@ let modalCallback = null;
 let searchTimer = null;
 const iconX = '<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><path d="M3.72 3.72a.75.75 0 011.06 0L8 6.94l3.22-3.22a.75.75 0 111.06 1.06L9.06 8l3.22 3.22a.75.75 0 11-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 01-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 010-1.06z"/></svg>';
 const iconPen = '<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><path d="M11.013 1.427a1.75 1.75 0 012.474 0l1.086 1.086a1.75 1.75 0 010 2.474l-8.61 8.61c-.21.21-.47.364-.756.445l-3.251.93a.75.75 0 01-.927-.928l.929-3.25a1.75 1.75 0 01.445-.758l8.61-8.61zm1.414 1.06a.25.25 0 00-.354 0L10.811 3.75l1.439 1.44 1.263-1.263a.25.25 0 000-.354l-1.086-1.086zM11.189 6.25L9.75 4.81l-6.286 6.287a.25.25 0 00-.064.108l-.558 1.953 1.953-.558a.249.249 0 00.108-.064l6.286-6.286z"/></svg>';
+let _chatMode = "autonomous";
+let _chatPendingTools = [];
+let _chatAbortController = null;
+let _chatContextFiles = [];
+let _chatDarkMode = false;
 
 function toast(msg, err) {
   const t = $("toast");
@@ -568,6 +690,7 @@ function toast(msg, err) {
   t.className = "toast show" + (err ? " error" : "");
   setTimeout(() => t.classList.remove("show"), 2500);
 }
+const showToast = toast;
 
 function openModal(title, bodyHtml, cb) {
   $("modalTitle").textContent = title;
@@ -719,6 +842,7 @@ function switchTab(name) {
   else if (name === "plugins") loadPlugins();
   else if (name === "sessions") loadSessions();
   else if (name === "chat") loadChat();
+  else if (name === "integrations") loadIntegrations();
   if (window.innerWidth <= 767) toggleSidebar();
 }
 
@@ -816,10 +940,167 @@ async function loadUsage() {
   }
 }
 
+let _integrations = {};
+async function loadIntegrations() {
+  const r = await fetch("/api/integrations");
+  _integrations = await r.json();
+  const ghUser = _integrations.github ? _integrations.github.username : null;
+  const content = $("integrationsContent");
+  if (!content) return;
+  let html = '<div class="integration-section"><div class="integration-section-title">Source Control</div><div class="integration-list">';
+  
+  html += '<div class="integration-item"><div class="integration-icon">&#x1F431;</div><div class="integration-info"><div class="integration-name">GitHub</div><div class="integration-desc">';
+  if (ghUser) html += 'Connected as ' + escHtml(ghUser) + ' to repositories';
+  else html += 'Connect GitHub for Cloud Agents and codebase context';
+  html += '</div></div><div class="integration-action">';
+  if (ghUser) html += '<button class="btn" onclick="disconnectGithub()">Disconnect</button>';
+  else html += '<button class="btn" onclick="connectGithub()">Connect &#x2197;</button>';
+  html += '</div></div>';
+
+  html += '<div class="integration-item"><div class="integration-icon" style="color:#e24329">&#x1F98A;</div><div class="integration-info"><div class="integration-name">GitLab</div><div class="integration-desc">Connect GitLab for enhanced codebase context</div></div><div class="integration-action"><button class="btn" disabled>Connect &#x2197;</button></div></div>';
+  html += '<div class="integration-item"><div class="integration-icon" style="color:#0078d7">&#x2699;</div><div class="integration-info"><div class="integration-name">Azure DevOps</div><div class="integration-desc">Connect Azure DevOps for enhanced codebase context</div></div><div class="integration-action"><button class="btn" disabled>Connect &#x2197;</button></div></div>';
+  
+  html += '</div></div>';
+  
+  if (ghUser) {
+    html += '<div class="integration-section" style="margin-top:24px"><div class="integration-section-title">Your Repositories</div>';
+    html += '<div id="ghReposContainer"><div class="loading" style="font-size:12px">Loading repositories...</div></div></div>';
+  }
+  
+  content.innerHTML = html;
+  
+  if (ghUser) {
+    fetch("/api/integrations/github/repos").then(r => r.json()).then(data => {
+      const container = $("ghReposContainer");
+      if (!container) return;
+      if (!data.ok) {
+        container.innerHTML = '<div style="color:#d22424;font-size:13px">Error loading repositories: ' + escHtml(data.error) + '</div>';
+        return;
+      }
+      
+      let rhtml = '<div class="integration-list">';
+      for (const repo of data.repos) {
+        rhtml += '<div class="integration-item"><div class="integration-icon" style="color:#656d76">&#x1F4D2;</div><div class="integration-info"><div class="integration-name">' + escHtml(repo.full_name) + '</div><div class="integration-desc">' + (repo.private ? "Private" : "Public") + ' &middot; Updated ' + new Date(repo.updated_at).toLocaleDateString() + '</div></div><div class="integration-action"><button class="btn btn-sm" onclick="cloneRepo(\\'' + repo.full_name + '\\', \\'' + repo.clone_url + '\\')">Clone & Work</button></div></div>';
+      }
+      rhtml += '</div>';
+      container.innerHTML = rhtml;
+    }).catch(e => {
+      const container = $("ghReposContainer");
+      if (container) container.innerHTML = '<div style="color:#d22424;font-size:13px">Failed to load repositories.</div>';
+    });
+  }
+}
+
+async function cloneRepo(fullName, cloneUrl) {
+  showToast("Cloning " + fullName + "...");
+  $("deviceFlowModalOverlay").classList.add("open");
+  $("deviceFlowModalOverlay").innerHTML = '<div class="modal" style="text-align:center"><div class="spinner" style="margin-bottom:16px"></div><h3>Cloning Workspace</h3><p style="color:#656d76;font-size:13px">Please wait while we clone ' + escHtml(fullName) + ' to your local machine...</p></div>';
+  
+  try {
+    const r = await fetch("/api/integrations/github/clone", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ repoFullName: fullName, cloneUrl })
+    });
+    const data = await r.json();
+    $("deviceFlowModalOverlay").classList.remove("open");
+    
+    if (data.ok) {
+      showToast("Workspace ready! Opening Chat context...");
+      // Switch to Chat tab
+      document.querySelectorAll(".sidebar-item").forEach(el => el.classList.toggle("active", el.dataset.tab === "chat"));
+      document.querySelectorAll(".content-section").forEach(el => el.classList.remove("active"));
+      $("tabChat").classList.add("active");
+      
+      _chatSessionId = null; // Start a new session
+      loadChat();
+      
+      // Auto-send context setup message to the AI
+      setTimeout(() => {
+        sendChatMessage("I have cloned the repository '" + fullName + "' to '" + data.path + "'. Please set this directory as your working directory context. I want you to act as a GitHub Automation Agent for this repo.");
+      }, 500);
+      
+    } else {
+      showToast("Error cloning: " + data.error, true);
+    }
+  } catch(e) {
+    $("deviceFlowModalOverlay").classList.remove("open");
+    showToast("Error cloning repository", true);
+  }
+}
+
+let _dfPollInterval = null;
+
+async function copyText(txt) {
+  try {
+    await navigator.clipboard.writeText(txt);
+    showToast("Copied to clipboard");
+  } catch(e) {
+    showToast("Failed to copy", true);
+  }
+}
+
+async function connectGithub() {
+  // Buka tab secara sinkron di sini untuk menghindari Popup Blocker browser
+  window.open("https://github.com/login/device", "_blank");
+  
+  const r = await fetch("/api/integrations/github/device-code", { method: "POST" });
+  const data = await r.json();
+  if (!data.ok) { showToast("Error: " + data.error, true); return; }
+  
+  $("dfCodeTxt").textContent = data.user_code;
+  $("deviceFlowModalOverlay").classList.add("open");
+  
+  // auto copy code
+  try { await navigator.clipboard.writeText(data.user_code); showToast("Code copied to clipboard! Please paste it in the opened tab."); } catch(e) {}
+  
+  if (_dfPollInterval) { clearTimeout(_dfPollInterval); _dfPollInterval = null; }
+  
+  let currentInterval = (data.interval || 5) * 1000 + 100; // Add 100ms padding to avoid slow_down
+  
+  const poll = async () => {
+    try {
+      const p = await fetch("/api/integrations/github/poll", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ device_code: data.device_code })
+      });
+      const res = await p.json();
+      if (res.status === "success") {
+        $("deviceFlowModalOverlay").classList.remove("open");
+        showToast("GitHub connected successfully as " + res.username);
+        loadIntegrations();
+        return; // stop polling
+      } else if (res.status === "error") {
+        $("deviceFlowModalOverlay").classList.remove("open");
+        showToast("Authorization failed: " + res.error, true);
+        return; // stop polling
+      } else if (res.status === "slow_down") {
+        currentInterval += 5000; // Increase interval by 5s
+      }
+    } catch(e) { console.error(e); }
+    
+    _dfPollInterval = setTimeout(poll, currentInterval);
+  };
+  
+  _dfPollInterval = setTimeout(poll, currentInterval);
+}
+
+function cancelDeviceFlow() {
+  if (_dfPollInterval) { clearTimeout(_dfPollInterval); _dfPollInterval = null; }
+  $("deviceFlowModalOverlay").classList.remove("open");
+}
+
+function disconnectGithub() {
+  if (!confirm("Disconnect GitHub?")) return;
+  fetch("/api/integrations/github", { method: "DELETE" })
+    .then(r => r.json()).then(res => {
+      if (res.ok) { showToast("GitHub disconnected"); loadIntegrations(); }
+    });
+}
+
 async function loadPlugins() {
   const r = await fetch("/api/plugins");
   const d = await r.json();
-  let html = '<div class="plugin-list">';
+  let html = '<div class="section-title" style="margin-bottom:12px">Plugins</div><div class="plugin-list">';
   if (!d.plugins?.length) {
     html += '<div class="empty-models">No plugins installed.</div>';
   } else {
@@ -1148,9 +1429,85 @@ async function selectChatSession(id) {
   }
 }
 
-async function sendChatMessage() {
+let _chatSelectedRepo = null;
+let _chatRepos = [];
+
+function toggleChatRepoMenu() {
+  const menu = $("chatRepoMenu");
+  if (menu.style.display === "none") {
+    menu.style.display = "block";
+    if (_chatRepos.length === 0) fetchChatRepos();
+    $("chatRepoSearch").focus();
+  } else {
+    menu.style.display = "none";
+  }
+}
+
+async function fetchChatRepos() {
+  const list = $("chatRepoList");
+  list.innerHTML = '<div style="padding:8px 12px;font-size:12px;color:#656d76">Loading repositories...</div>';
+  try {
+    const r = await fetch("/api/integrations/github/repos");
+    const d = await r.json();
+    if (d.ok && d.repos) {
+      _chatRepos = d.repos;
+      renderChatRepoList();
+    } else {
+      list.innerHTML = '<div style="padding:8px 12px;font-size:12px;color:#cf222e">Failed to load repos</div>';
+    }
+  } catch (e) {
+    list.innerHTML = '<div style="padding:8px 12px;font-size:12px;color:#cf222e">Error loading repos</div>';
+  }
+}
+
+function renderChatRepoList() {
+  const q = $("chatRepoSearch").value.toLowerCase();
+  const list = $("chatRepoList");
+  const filtered = _chatRepos.filter(r => r.full_name.toLowerCase().includes(q));
+  
+  if (filtered.length === 0) {
+    list.innerHTML = '<div style="padding:8px 12px;font-size:12px;color:#656d76">No repositories found</div>';
+    return;
+  }
+  
+  let html = '';
+  // Add a "None" option
+  html += '<div class="chat-repo-item" style="padding:6px 12px;font-size:12px;cursor:pointer;color:#24292f" onclick="selectChatRepo(null)"><em>Clear selection</em></div>';
+  
+  for (const r of filtered) {
+    html += '<div class="chat-repo-item" style="padding:6px 12px;font-size:12px;cursor:pointer;color:#24292f;display:flex;align-items:center;gap:6px" onclick="selectChatRepo(\\'' + r.full_name + '\\')">';
+    html += '<span>&#x1F4D2;</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escHtml(r.full_name) + '</span>';
+    html += '</div>';
+  }
+  list.innerHTML = html;
+}
+
+function selectChatRepo(fullName) {
+  _chatSelectedRepo = fullName;
+  const btn = $("chatRepoSelectBtn");
+  if (fullName) {
+    btn.innerHTML = '&#x1F4D2; ' + escHtml(fullName) + ' <span style="font-size:10px;margin-left:4px">&#x25BC;</span>';
+  } else {
+    btn.innerHTML = 'Select repository <span style="font-size:10px;margin-left:4px">&#x25BC;</span>';
+  }
+  $("chatRepoMenu").style.display = "none";
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  $("chatRepoSelectBtn").addEventListener("click", toggleChatRepoMenu);
+  $("chatRepoSearch").addEventListener("input", renderChatRepoList);
+  document.addEventListener("click", (e) => {
+    const dropdown = $("chatRepoDropdown");
+    if (dropdown && !dropdown.contains(e.target)) {
+      $("chatRepoMenu").style.display = "none";
+    }
+  });
+});
+
+let _currentStreamText = "";
+async function sendChatMessage(overrideText) {
   const input = $("chatInput");
-  const msg = input.value.trim();
+  const msg = typeof overrideText === "string" ? overrideText : input.value.trim();
   if (!msg || _chatLoading) return;
   input.value = "";
   _chatLoading = true;
@@ -1161,39 +1518,128 @@ async function sendChatMessage() {
   $("chatMessages").insertAdjacentHTML("beforeend",
     '<div class="chat-bubble user"><div class="chat-bubble-label">You</div><div class="chat-bubble-inner">' + escHtml(msg) + '</div><div class="chat-bubble-time">just now</div></div>');
   $("chatMessages").insertAdjacentHTML("beforeend",
-    '<div class="chat-bubble assistant" id="chatPending"><div class="chat-bubble-label">Assistant</div><div class="chat-bubble-inner" style="color:#8c959f">Thinking...</div></div>');
+    '<div class="chat-bubble assistant" id="chatPending"><div class="chat-bubble-label">Assistant</div><div class="chat-bubble-inner" id="chatStreamingText" style="color:#8c959f">Thinking...</div><div id="chatStreamingTools" style="width:100%;margin-top:8px;"></div></div>');
   $("chatMessagesWrapper").scrollTop = $("chatMessagesWrapper").scrollHeight;
 
   try {
+    const payload = { sessionId: _chatSessionId, message: msg };
+    if (_chatSelectedRepo) {
+      payload.context = "GitHub Repository Context: " + _chatSelectedRepo;
+    }
     const r = await fetch("/api/chat", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ sessionId: _chatSessionId, message: msg }),
+      body: JSON.stringify(payload),
     });
-    const d = await r.json();
+    
     const pending = $("chatPending");
-    if (!d.ok) {
+
+    if (!r.ok) {
+      const d = await r.json().catch(() => ({}));
       if (pending) pending.outerHTML = '<div class="chat-bubble assistant"><div class="chat-bubble-inner" style="color:#cf222e">' + escHtml(d.error || "Error") + '</div></div>';
       if (d.error?.includes("server not available") || d.error?.includes("not available")) {
         showChatNoServer();
       }
+      _chatLoading = false;
+      $("chatSendBtn").disabled = false;
+      $("chatSendBtn").textContent = "Send";
       return;
     }
-    if (pending) {
-      pending.outerHTML = '<div class="chat-bubble assistant"><div class="chat-bubble-inner">' + renderMd(d.response || "(empty)") + '</div><div class="chat-bubble-time">just now</div></div>';
+
+    const sid = r.headers.get("X-Session-Id");
+    if (sid && sid !== _chatSessionId) {
+      _chatSessionId = sid;
+      setTimeout(loadChat, 500);
     }
-    if (d.sessionId && d.sessionId !== _chatSessionId) {
-      _chatSessionId = d.sessionId;
-      loadChat();
+
+    _currentStreamText = "";
+    if (pending) {
+      $("chatStreamingText").style.color = "inherit";
+      $("chatStreamingText").innerHTML = "";
+    }
+
+    const reader = r.body.getReader();
+    const decoder = new TextDecoder("utf-8");
+    let buffer = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      
+      const lines = buffer.split("\\n");
+      buffer = lines.pop() || "";
+      
+      for (const line of lines) {
+        if (line.startsWith("data: ")) {
+          const dataStr = line.slice(6).trim();
+          if (dataStr === "[DONE]") continue;
+          try {
+            const event = JSON.parse(dataStr);
+            handleChatEvent(event);
+          } catch (e) {
+            console.error("Parse error", e);
+          }
+        }
+      }
     }
   } catch (e) {
     const pending = $("chatPending");
     if (pending) pending.outerHTML = '<div class="chat-bubble assistant"><div class="chat-bubble-inner" style="color:#cf222e">Error: connection failed</div></div>';
   }
+  
+  const pending = $("chatPending");
+  if (pending) {
+    pending.removeAttribute("id");
+    if (!$("chatStreamingText").innerHTML && !$("chatStreamingTools").innerHTML) {
+      $("chatStreamingText").innerHTML = "(empty response)";
+    }
+    $("chatStreamingText").removeAttribute("id");
+    $("chatStreamingTools").removeAttribute("id");
+  }
+
   _chatLoading = false;
   $("chatSendBtn").disabled = false;
   $("chatSendBtn").textContent = "Send";
-  $("chatMessages").scrollTop = $("chatMessages").scrollHeight;
+  $("chatMessagesWrapper").scrollTop = $("chatMessagesWrapper").scrollHeight;
+}
+
+function handleChatEvent(event) {
+  const textEl = $("chatStreamingText");
+  const toolsEl = $("chatStreamingTools");
+  if (!textEl || !toolsEl) return;
+
+  // Handle generic text delta or part streaming
+  if (event.type === "text") {
+    _currentStreamText += (event.text || event.delta || "");
+    textEl.innerHTML = renderMd(_currentStreamText);
+  } else if (event.parts) {
+    // some formats send parts directly
+    for (const p of event.parts) {
+      if (p.type === "text") {
+        _currentStreamText += p.text;
+      }
+    }
+    textEl.innerHTML = renderMd(_currentStreamText);
+  } else if (event.type === "tool_call:run_command" || event.type === "run_command" || event.tool === "run_command") {
+    const args = event.args || event.arguments || {};
+    const cmd = args.command || args.CommandLine || event.command || "";
+    toolsEl.insertAdjacentHTML("beforeend", 
+      '<div style="margin:8px 0;padding:12px;background:#1f2328;color:#f6f8fa;border-radius:6px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;overflow-x:auto;">$ ' + escHtml(cmd) + '</div>');
+  } else if (event.type === "tool_call:edit_file" || event.type === "edit_file" || event.tool === "edit_file" || event.tool === "replace_file_content" || event.tool === "multi_replace_file_content") {
+    const args = event.args || event.arguments || {};
+    const target = args.targetFile || args.TargetFile || args.target || "";
+    toolsEl.insertAdjacentHTML("beforeend", 
+      '<div style="margin:8px 0;padding:10px 12px;background:#f0f6ff;border:1px solid #cce5ff;border-radius:6px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:#0969da;display:flex;align-items:center;gap:6px;">' +
+      '<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><path d="M11.013 1.427a1.75 1.75 0 012.474 0l1.086 1.086a1.75 1.75 0 010 2.474l-8.61 8.61c-.21.21-.47.364-.756.445l-3.251.93a.75.75 0 01-.927-.928l.929-3.25a1.75 1.75 0 01.445-.758l8.61-8.61zm1.414 1.06a.25.25 0 00-.354 0L10.811 3.75l1.439 1.44 1.263-1.263a.25.25 0 000-.354l-1.086-1.086zM11.189 6.25L9.75 4.81l-6.286 6.287a.25.25 0 00-.064.108l-.558 1.953 1.953-.558a.249.249 0 00.108-.064l6.286-6.286z"/></svg> ' + 
+      'Editing ' + escHtml(target) + '</div>');
+  } else if (event.type === "tool_result") {
+    // Optionally render tool result outputs
+    toolsEl.insertAdjacentHTML("beforeend", 
+      '<div style="margin:0 0 12px;font-size:11px;color:#1a7f37;display:flex;align-items:center;gap:4px;"><svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor"><path d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z"/></svg> Execution complete</div>');
+  }
+  
+  $("chatMessagesWrapper").scrollTop = $("chatMessagesWrapper").scrollHeight;
 }
 
 function showChatNoServer() {
@@ -1426,6 +1872,120 @@ function createServer(opts?: { port?: number }) {
           return json({ ok: true, model });
         } catch (e: any) {
           return json({ ok: false, error: e.message }, 500);
+        }
+      }
+
+      // --- Integrations ---
+      if (url.pathname === "/api/integrations") {
+        const cfg = await readConfig();
+        const integrations = cfg.raw?.integrations || {};
+        return json(integrations);
+      }
+      if (url.pathname === "/api/integrations/github/device-code" && req.method === "POST") {
+        try {
+          const cid = "178c6fc778ccc68e1d6a"; // GitHub CLI Client ID
+          const r = await fetch("https://github.com/login/device/code", {
+            method: "POST",
+            headers: { "Accept": "application/json", "Content-Type": "application/json" },
+            body: JSON.stringify({ client_id: cid, scope: "repo,user" })
+          });
+          const data = await r.json();
+          if (data.error) return json({ ok: false, error: data.error_description || data.error }, 400);
+          return json({ ok: true, device_code: data.device_code, user_code: data.user_code, verification_uri: data.verification_uri, interval: data.interval });
+        } catch (e: any) { return json({ ok: false, error: e.message }, 500); }
+      }
+      
+      if (url.pathname === "/api/integrations/github/poll" && req.method === "POST") {
+        try {
+          const { device_code } = await req.json();
+          const cid = "178c6fc778ccc68e1d6a";
+          const r = await fetch("https://github.com/login/oauth/access_token", {
+            method: "POST",
+            headers: { "Accept": "application/json", "Content-Type": "application/json" },
+            body: JSON.stringify({ client_id: cid, device_code, grant_type: "urn:ietf:params:oauth:grant-type:device_code" })
+          });
+          const data = await r.json();
+          console.log("[GitHub Device Poll] Response:", data);
+          try { require("fs").writeFileSync("/Users/aaa/Documents/Developer/opencode-manager/debug-poll.log", "[Poll] " + JSON.stringify(data) + "\n", {flag: "a"}); } catch(e){}
+          
+          if (data.error) {
+            if (data.error === "authorization_pending") return json({ status: "pending" });
+            if (data.error === "slow_down") return json({ status: "slow_down" });
+            return json({ status: "error", error: data.error_description || data.error });
+          }
+          
+          if (data.access_token) {
+            const token = data.access_token;
+            console.log("[GitHub Device Poll] Fetching user info with Bearer token...");
+            const u = await fetch("https://api.github.com/user", { headers: { "Authorization": `Bearer ${token}`, "User-Agent": "OpenCode-Manager" } });
+            const user = await u.json();
+            console.log("[GitHub Device Poll] User response:", user);
+            try { require("fs").writeFileSync("/Users/aaa/Documents/Developer/opencode-manager/debug-poll.log", "[User] " + JSON.stringify(user) + "\n", {flag: "a"}); } catch(e){}
+            
+            await writeConfig((cfg: any) => {
+              if (!cfg.integrations) cfg.integrations = {};
+              cfg.integrations.github = { token, username: user.login };
+              return cfg;
+            });
+            
+            return json({ status: "success", username: user.login });
+          }
+          return json({ status: "error", error: "Unknown response" });
+        } catch(e: any) { return json({ status: "error", error: e.message }); }
+      }
+      
+      if (url.pathname === "/api/integrations/github/repos" && req.method === "GET") {
+        try {
+          const cfg = await readConfig();
+          const token = cfg.raw?.integrations?.github?.token;
+          if (!token) return json({ ok: false, error: "Not connected to GitHub" }, 401);
+          
+          const r = await fetch("https://api.github.com/user/repos?sort=updated&per_page=100", {
+            headers: { "Authorization": `Bearer ${token}`, "User-Agent": "OpenCode-Manager", "Accept": "application/vnd.github.v3+json" }
+          });
+          const data = await r.json();
+          if (data.message) return json({ ok: false, error: data.message }, 400);
+          
+          return json({ ok: true, repos: data });
+        } catch(e: any) { return json({ ok: false, error: e.message }, 500); }
+      }
+      
+      if (url.pathname === "/api/integrations/github/clone" && req.method === "POST") {
+        try {
+          const { repoFullName, cloneUrl } = await req.json();
+          if (!repoFullName || !cloneUrl) return json({ ok: false, error: "Missing parameters" }, 400);
+          
+          const cfg = await readConfig();
+          const token = cfg.raw?.integrations?.github?.token;
+          if (!token) return json({ ok: false, error: "Not connected to GitHub" }, 401);
+          
+          const workspacesDir = join(homedir(), "Documents", "OpenCodeWorkspaces");
+          if (!existsSync(workspacesDir)) {
+            execSync(`mkdir -p "${workspacesDir}"`);
+          }
+          
+          const targetDir = join(workspacesDir, repoFullName.split("/").pop() || "repo");
+          if (existsSync(targetDir)) {
+            return json({ ok: true, path: targetDir, message: "Workspace already exists" });
+          }
+          
+          const authUrl = cloneUrl.replace("https://", `https://oauth2:${token}@`);
+          const util = await import("util");
+          const cp = await import("child_process");
+          const execAsync = util.promisify(cp.exec);
+          await execAsync(`git clone "${authUrl}" "${targetDir}"`);
+          
+          return json({ ok: true, path: targetDir });
+        } catch(e: any) { return json({ ok: false, error: e.message }, 500); }
+      }
+
+      if (url.pathname === "/api/integrations/github") {
+        if (req.method === "DELETE") {
+          await writeConfig((cfg: any) => {
+            if (cfg.integrations && cfg.integrations.github) delete cfg.integrations.github;
+            return cfg;
+          });
+          return json({ ok: true });
         }
       }
 
@@ -1689,7 +2249,7 @@ function createServer(opts?: { port?: number }) {
         }
       }
       if (url.pathname === "/api/chat" && req.method === "POST") {
-        const { sessionId, message } = await req.json();
+        const { sessionId, message, context } = await req.json();
         if (!message) return json({ ok: false, error: "message required" }, 400);
         if (!_sdkClient) return json({ ok: false, error: "OpenCode server not available. Run 'opencode serve' in another terminal, or use this UI as an OpenCode plugin." }, 400);
 
@@ -1697,18 +2257,72 @@ function createServer(opts?: { port?: number }) {
           let sid = sessionId;
           if (!sid) {
             const created = await _sdkClient.session.create({ body: { title: message.slice(0, 80) } });
-            sid = (created as any)?.data?.id;
+            sid = (created as any)?.data?.id || (created as any)?.id;
           }
-          const result = await _sdkClient.session.prompt({
-            path: { id: sid },
-            body: { parts: [{ type: "text", text: message }] },
+          
+          const cfg = await readConfig();
+          const activeModel = cfg.current;
+          
+          const parts = [];
+          let targetDir: string | undefined = undefined;
+          
+          if (context) {
+            parts.push({ type: "text", text: context + "\n\n" });
+            const match = context.match(/GitHub Repository Context: (.*)/);
+            if (match) {
+              const repoFullName = match[1].trim();
+              const workspacesDir = join(homedir(), "Documents", "OpenCodeWorkspaces");
+              targetDir = join(workspacesDir, repoFullName.split("/").pop() || "repo");
+            }
+          }
+          parts.push({ type: "text", text: message });
+          
+          let modelObj = undefined;
+          if (activeModel) {
+            const splitIdx = activeModel.indexOf("/");
+            if (splitIdx !== -1) {
+              modelObj = { providerID: activeModel.slice(0, splitIdx), modelID: activeModel.slice(splitIdx + 1) };
+            }
+          }
+
+          let baseUrl = process.env.OPENCODE_SERVER || "http://127.0.0.1:17497";
+          if (_sdkClient && _sdkClient.client && typeof _sdkClient.client.getConfig === "function") {
+            const sdkConfig = _sdkClient.client.getConfig();
+            if (sdkConfig && sdkConfig.baseUrl) {
+              baseUrl = sdkConfig.baseUrl;
+            }
+          }
+          console.log("[DEBUG] /api/chat baseUrl:", baseUrl);
+          const query = targetDir ? `?directory=${encodeURIComponent(targetDir)}&stream=true` : `?stream=true`;
+          
+          const upstream = await fetch(`${baseUrl}/session/${sid}/prompt${query}`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Accept": "text/event-stream"
+            },
+            body: JSON.stringify({
+              parts,
+              model: modelObj,
+              stream: true
+            })
           });
-          const data = (result as any)?.data || result;
-          const parts = data?.parts || [];
-          const textParts = parts.filter((p: any) => p.type === "text").map((p: any) => p.text);
-          const responseText = textParts.join("") || extractResponseText(data);
-          return json({ ok: true, sessionId: sid, response: responseText || "(no response)" });
+
+          return new Response(upstream.body, {
+            status: upstream.status,
+            headers: {
+              "Content-Type": "text/event-stream",
+              "Cache-Control": "no-cache",
+              "Connection": "keep-alive",
+              "Access-Control-Allow-Origin": "*",
+              "X-Session-Id": sid
+            }
+          });
         } catch (e: any) {
+          const errMsg = e.message || "";
+          if (errMsg.includes("connect") || errMsg.includes("fetch failed") || errMsg.includes("refused")) {
+            return json({ ok: false, error: "OpenCode server not available. Run 'opencode serve' in another terminal." }, 500);
+          }
           return json({ ok: false, error: e.message }, 500);
         }
       }
@@ -1724,10 +2338,10 @@ function createServer(opts?: { port?: number }) {
           if (!pluginUrl) return json({ ok: false, error: "url required" }, 400);
           try {
           await writeConfig((cfg: any) => {
-            if (!cfg.plugins) cfg.plugins = cfg.plugin || [];
-            if (cfg.plugins.includes(pluginUrl)) throw new Error("plugin already exists");
-            cfg.plugins.push(pluginUrl);
-            delete cfg.plugin;
+            if (!cfg.plugin) cfg.plugin = cfg.plugins || [];
+            if (cfg.plugin.includes(pluginUrl)) throw new Error("plugin already exists");
+            cfg.plugin.push(pluginUrl);
+            delete cfg.plugins;
             return cfg;
           }, undefined, pluginUrl);
             return json({ ok: true });
@@ -1740,10 +2354,10 @@ function createServer(opts?: { port?: number }) {
           if (!pluginUrl) return json({ ok: false, error: "url required" }, 400);
           try {
           await writeConfig((cfg: any) => {
-            const plugins = cfg.plugins || cfg.plugin || [];
+            const plugins = cfg.plugin || cfg.plugins || [];
             if (!plugins.includes(pluginUrl)) throw new Error("plugin not found");
-            cfg.plugins = plugins.filter((p: string) => p !== pluginUrl);
-            delete cfg.plugin;
+            cfg.plugin = plugins.filter((p: string) => p !== pluginUrl);
+            delete cfg.plugins;
             return cfg;
           }, undefined, pluginUrl);
             return json({ ok: true });
